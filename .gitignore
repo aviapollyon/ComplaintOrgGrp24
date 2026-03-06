@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.env
+.venv/
+venv/
+env/
+
+# Instance & DB
+instance/
+*.db
+
+# Uploads
+app/static/uploads/*
+!app/static/uploads/.gitkeep
+
+# Migrations (optional: keep if you want to track migrations)
+# migrations/
+
+# IDEs
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db

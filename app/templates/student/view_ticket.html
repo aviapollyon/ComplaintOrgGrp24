@@ -1,0 +1,413 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket.TicketId }} — DUT Grievance Portal{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('student.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Ticket #{{ ticket.TicketId }}</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+  <!-- LEFT -->
+  <div class="col-lg-8">
+
+    <!-- Ticket Info -->
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">{{ ticket.Title }}</h5>
+        {% set s = ticket.Status.value %}
+        {% if s == 'Submitted' %}       <span class="badge bg-secondary fs-6">Submitted</span>
+        {% elif s == 'Assigned' %}      <span class="badge bg-primary fs-6">Assigned</span>
+        {% elif s == 'In Progress' %}   <span class="badge bg-info text-dark fs-6">In Progress</span>
+        {% elif s == 'Pending Info' %}  <span class="badge bg-warning text-dark fs-6"><i class="bi bi-question-circle me-1"></i>Pending Info</span>
+        {% elif s == 'Resolved' %}      <span class="badge bg-success fs-6">Resolved</span>
+        {% elif s == 'Rejected' %}      <span class="badge bg-danger fs-6">Rejected</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <p class="text-muted">{{ ticket.Description }}</p>
+        <div class="row g-3 mt-1">
+          <div class="col-sm-4">
+            <div class="small text-muted">Category</div>
+            <span class="badge bg-secondary">{{ ticket.Category }}</span>
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Department</div>
+            <span class="small">{{ ticket.department.Name if ticket.department else '—' }}</span>
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Priority</div>
+            {% if ticket.Priority.value == 'High' %}     <span class="badge bg-danger">High</span>
+            {% elif ticket.Priority.value == 'Medium' %} <span class="badge bg-warning text-dark">Medium</span>
+            {% else %}                                   <span class="badge bg-success">Low</span>
+            {% endif %}
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Submitted</div>
+            <span class="small">{{ ticket.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
+          </div>
+          {% if ticket.ResolvedAt %}
+          <div class="col-sm-4">
+            <div class="small text-muted">Resolved At</div>
+            <span class="small">{{ ticket.ResolvedAt.strftime('%d %b %Y %H:%M') }}</span>
+          </div>
+          {% endif %}
+          {% if ticket.staff %}
+          <div class="col-sm-4">
+            <div class="small text-muted">Assigned To</div>
+            <span class="small">{{ ticket.staff.FullName }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+      {% if ticket.is_editable or ticket.is_withdrawable %}
+      <div class="card-footer bg-transparent d-flex gap-2">
+        {% if ticket.is_editable %}
+          <a href="{{ url_for('student.edit_ticket', ticket_id=ticket.TicketId) }}"
+             class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-pencil me-1"></i>Edit Ticket
+          </a>
+        {% endif %}
+        {% if ticket.is_withdrawable %}
+          <button class="btn btn-sm btn-outline-danger"
+                  data-bs-toggle="modal" data-bs-target="#withdrawModal">
+            <i class="bi bi-x-circle me-1"></i>Withdraw
+          </button>
+        {% endif %}
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Ticket-level Attachments -->
+    {% if ticket_attachments %}
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header"><i class="bi bi-paperclip me-1"></i>Attachments</div>
+      <div class="card-body">
+        <div class="row g-2">
+          {% for a in ticket_attachments %}
+            {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
+            <div class="col-6 col-md-4">
+              <div class="border rounded p-2 text-center">
+                {% if ext in ['png', 'jpg', 'jpeg'] %}
+                  <a href="{{ attachment_url(a) }}" target="_blank">
+                    <img src="{{ attachment_url(a) }}"
+                         class="img-fluid rounded mb-1"
+                         style="max-height:120px;object-fit:cover;"
+                         alt="{{ a.FileName }}"/>
+                  </a>
+                {% else %}
+                  <a href="{{ attachment_url(a) }}" target="_blank" class="text-decoration-none">
+                    <i class="bi bi-file-earmark-text display-6 text-primary d-block mb-1"></i>
+                  </a>
+                {% endif %}
+                <div class="small text-truncate">{{ a.FileName }}</div>
+                <a href="{{ attachment_url(a) }}" target="_blank"
+                   class="btn btn-sm btn-outline-primary mt-1">
+                  <i class="bi bi-download me-1"></i>Open
+                </a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Thread Timeline -->
+    <div class="card shadow-sm border-0">
+      <div class="card-header"><i class="bi bi-chat-left-dots me-1"></i>Activity &amp; Messages</div>
+      <div class="card-body p-3">
+        {% if updates %}
+          {% for update in updates %}
+            {% set is_staff  = update.author.Role.value == 'Staff' %}
+            {% set is_system = (update.StatusChange is not none and not is_staff) %}
+
+            {# ── System log line ── #}
+            {% if is_system %}
+            <div class="d-flex gap-2 mb-3 align-items-start">
+              <div class="text-secondary mt-1">
+                <i class="bi bi-arrow-right-circle-fill small"></i>
+              </div>
+              <div class="flex-grow-1">
+                <span class="small text-muted">{{ update.Comment }}</span>
+                {% if update.StatusChange %}
+                  <span class="badge bg-primary bg-opacity-10 text-primary border border-primary ms-2">
+                    → {{ update.StatusChange.value }}
+                  </span>
+                {% endif %}
+                <div class="text-muted" style="font-size:0.72rem;">
+                  {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                </div>
+              </div>
+            </div>
+
+            {# ── Staff comment bubble ── #}
+            {% elif is_staff %}
+            <div class="mb-4">
+              <div class="d-flex gap-2 align-items-start">
+                <div class="rounded-circle bg-primary text-white d-flex align-items-center
+                            justify-content-center flex-shrink-0"
+                     style="width:36px;height:36px;font-size:0.8rem;">
+                  {{ update.author.FullName[0].upper() }}
+                </div>
+                <div class="flex-grow-1">
+                  <div class="bg-primary bg-opacity-10 border border-primary rounded p-3">
+                    <div class="d-flex justify-content-between mb-1">
+                      <span class="fw-semibold small text-primary">
+                        {{ update.author.FullName }}
+                        <span class="badge bg-primary ms-1" style="font-size:0.65rem;">
+                          {% if update.IsReplyThread %}
+                            <i class="bi bi-chat-left-dots me-1"></i>Reply Thread
+                          {% else %}
+                            Staff
+                          {% endif %}
+                        </span>
+                      </span>
+                      <span class="text-muted" style="font-size:0.75rem;">
+                        {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                      </span>
+                    </div>
+                    <p class="mb-2 small">{{ update.Comment }}</p>
+                    {% if update.StatusChange %}
+                      <span class="badge bg-warning text-dark border border-warning">
+                        <i class="bi bi-question-circle me-1"></i>{{ update.StatusChange.value }}
+                      </span>
+                    {% endif %}
+                  </div>
+
+                  {# ────────────────────────────────────────────────────────────
+                     GATE: only IsReplyThread comments get replies + reply box
+                  ──────────────────────────────────────────────────────────── #}
+                  {% if update.IsReplyThread %}
+
+                    {# Existing replies in this thread #}
+                    {% for reply in update.replies.all() %}
+                    <div class="d-flex gap-2 mt-2 ms-4">
+                      <div class="rounded-circle
+                                  {% if reply.author.Role.value == 'Staff' %}bg-primary{% else %}bg-secondary{% endif %}
+                                  text-white d-flex align-items-center justify-content-center flex-shrink-0"
+                           style="width:30px;height:30px;font-size:0.75rem;">
+                        {{ reply.author.FullName[0].upper() }}
+                      </div>
+                      <div class="flex-grow-1">
+                        <div class="bg-light border rounded p-2">
+                          <div class="d-flex justify-content-between mb-1">
+                            <span class="fw-semibold small">
+                              {{ reply.author.FullName }}
+                              <span class="badge
+                                {% if reply.author.Role.value == 'Staff' %}bg-primary{% else %}bg-secondary{% endif %}
+                                ms-1" style="font-size:0.65rem;">
+                                {{ reply.author.Role.value }}
+                              </span>
+                            </span>
+                            <span class="text-muted" style="font-size:0.72rem;">
+                              {{ reply.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                            </span>
+                          </div>
+                          <p class="mb-1 small">{{ reply.Comment }}</p>
+                          {# Reply attachments #}
+                          {% for ra in reply.attachments.all() %}
+                            {% set ext = ra.FileName.rsplit('.', 1)[-1].lower() %}
+                            {% if ext in ['png', 'jpg', 'jpeg'] %}
+                              <a href="{{ attachment_url(ra) }}" target="_blank">
+                                <img src="{{ attachment_url(ra) }}"
+                                     style="max-height:60px;border-radius:4px;"
+                                     alt="{{ ra.FileName }}"/>
+                              </a>
+                            {% else %}
+                              <a href="{{ attachment_url(ra) }}" target="_blank"
+                                 class="btn btn-sm btn-outline-secondary">
+                                <i class="bi bi-paperclip me-1"></i>{{ ra.FileName }}
+                              </a>
+                            {% endif %}
+                          {% endfor %}
+                        </div>
+                      </div>
+                    </div>
+                    {% endfor %}
+
+                    {# Student reply box — only for IsReplyThread + ticket not closed #}
+                    {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
+                    <div class="ms-4 mt-2">
+                      <form method="POST"
+                            action="{{ url_for('student.reply_to_update',
+                                               ticket_id=ticket.TicketId,
+                                               update_id=update.UpdateId) }}"
+                            enctype="multipart/form-data">
+                        {{ reply_form.hidden_tag() }}
+                        {{ reply_form.comment(class="form-control form-control-sm mb-1",
+                                              rows=2,
+                                              placeholder="Reply to " ~ update.author.FullName ~ "…") }}
+                        <div class="d-flex gap-2 align-items-center">
+                          <label class="btn btn-sm btn-outline-secondary mb-0">
+                            <i class="bi bi-paperclip"></i>
+                            {{ reply_form.attachments(class="d-none", multiple=True,
+                                                      id="fileInput_" ~ update.UpdateId) }}
+                          </label>
+                          <span class="small text-muted" id="fileLabel_{{ update.UpdateId }}">
+                            No file chosen
+                          </span>
+                          <button type="submit" class="btn btn-sm btn-primary ms-auto">
+                            <i class="bi bi-send me-1"></i>Reply
+                          </button>
+                        </div>
+                      </form>
+                    </div>
+                    {% endif %}
+
+                  {% endif %}{# end IsReplyThread gate #}
+
+                </div>
+              </div>
+            </div>
+
+            {# ── Student's own top-level log entries ── #}
+            {% else %}
+            <div class="d-flex gap-2 mb-3 align-items-start justify-content-end">
+              <div class="flex-grow-1 text-end">
+                <div class="bg-light border rounded p-2 d-inline-block text-start"
+                     style="max-width:85%;">
+                  <div class="d-flex justify-content-between gap-3 mb-1">
+                    <span class="fw-semibold small">{{ update.author.FullName }}</span>
+                    <span class="text-muted" style="font-size:0.72rem;">
+                      {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                    </span>
+                  </div>
+                  <p class="mb-0 small">{{ update.Comment }}</p>
+                </div>
+              </div>
+              <div class="rounded-circle bg-secondary text-white d-flex align-items-center
+                          justify-content-center flex-shrink-0"
+                   style="width:36px;height:36px;font-size:0.8rem;">
+                {{ update.author.FullName[0].upper() }}
+              </div>
+            </div>
+            {% endif %}
+
+          {% endfor %}
+        {% else %}
+          <p class="text-muted small mb-0">No activity yet.</p>
+        {% endif %}
+      </div>
+    </div>
+
+  </div><!-- /col-lg-8 -->
+
+  <!-- RIGHT: Pending Info alert + Feedback -->
+  <div class="col-lg-4">
+
+    {% if ticket.Status.value == 'Pending Info' %}
+    <div class="alert alert-warning">
+      <i class="bi bi-question-circle-fill me-2"></i>
+      <strong>More information needed.</strong><br>
+      <span class="small">Staff has requested clarification.
+        Please reply to the <strong>Reply Thread</strong> message above.</span>
+    </div>
+    {% endif %}
+
+    {% if ticket.needs_feedback %}
+    <div class="card border-warning shadow-sm">
+      <div class="card-header bg-warning text-dark fw-semibold">
+        <i class="bi bi-star-fill me-1"></i>Rate This Resolution
+      </div>
+      <div class="card-body">
+        <form method="POST"
+              action="{{ url_for('student.submit_feedback', ticket_id=ticket.TicketId) }}">
+          {{ feedback_form.hidden_tag() }}
+          <div class="mb-3">
+            <label class="form-label fw-semibold">Rating (1–5)</label>
+            <div class="d-flex gap-2" id="starRating">
+              {% for i in range(1, 6) %}
+                <button type="button" class="btn btn-outline-warning star-btn"
+                        data-value="{{ i }}">
+                  <i class="bi bi-star"></i>
+                </button>
+              {% endfor %}
+            </div>
+            <input type="hidden" name="rating" id="ratingInput" required/>
+          </div>
+          <div class="mb-3">
+            {{ feedback_form.comment.label(class="form-label fw-semibold") }}
+            {{ feedback_form.comment(class="form-control form-control-sm") }}
+          </div>
+          <button type="submit" class="btn btn-warning w-100 fw-semibold">
+            Submit Feedback
+          </button>
+        </form>
+      </div>
+    </div>
+
+    {% elif ticket.FeedbackRating %}
+    <div class="card border-success shadow-sm">
+      <div class="card-header bg-success text-white fw-semibold">
+        <i class="bi bi-check-circle me-1"></i>Your Feedback
+      </div>
+      <div class="card-body">
+        <p class="mb-1">
+          {% for i in range(ticket.FeedbackRating) %}
+            <i class="bi bi-star-fill text-warning"></i>
+          {% endfor %}
+          {% for i in range(5 - ticket.FeedbackRating) %}
+            <i class="bi bi-star text-muted"></i>
+          {% endfor %}
+        </p>
+        {% if ticket.FeedbackComment %}
+          <p class="mb-0 small text-muted">{{ ticket.FeedbackComment }}</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+</div>
+
+<!-- Withdraw Modal -->
+<div class="modal fade" id="withdrawModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header border-0">
+        <h5 class="modal-title text-danger">
+          <i class="bi bi-exclamation-triangle me-2"></i>Withdraw Complaint?
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        Are you sure you want to withdraw <strong>Ticket #{{ ticket.TicketId }}</strong>?
+        This marks it as <strong>Rejected</strong> and cannot be undone.
+      </div>
+      <div class="modal-footer border-0">
+        <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <form method="POST"
+              action="{{ url_for('student.withdraw_ticket', ticket_id=ticket.TicketId) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" class="btn btn-danger">Yes, Withdraw</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+// Star rating
+const stars = document.querySelectorAll('.star-btn');
+const ratingInput = document.getElementById('ratingInput');
+if (stars.length) {
+  stars.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const val = parseInt(btn.dataset.value);
+      ratingInput.value = val;
+      stars.forEach((s, idx) => {
+        s.querySelector('i').className = idx < val ? 'bi bi-star-fill' : 'bi bi-star';
+        s.classList.toggle('btn-warning', idx < val);
+        s.classList.toggle('btn-outline-warning', idx >= val);
+      });
+    });
+  });
+}
+</script>
+{% endblock %}

@@ -1,0 +1,46 @@
+/* ���── DUT Grievance Portal — Main Styles ─── */
+
+body {
+  background-color: #f5f7fa;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+/* Navbar brand */
+.navbar-brand {
+  letter-spacing: 0.02em;
+}
+
+/* Card defaults */
+.card {
+  border-radius: 0.75rem;
+}
+
+/* Table */
+.table th {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6c757d;
+}
+
+/* Timeline dot */
+.bi-circle-fill {
+  font-size: 0.55rem;
+}
+
+/* Star buttons */
+.star-btn {
+  font-size: 1.25rem;
+  padding: 0.25rem 0.4rem;
+  line-height: 1;
+}
+
+/* Priority badge in forms */
+#priorityBadge {
+  transition: border-color 0.2s, color 0.2s;
+}
+
+/* Footer */
+footer {
+  font-size: 0.85rem;
+}
