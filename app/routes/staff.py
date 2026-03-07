@@ -8,13 +8,15 @@ from datetime import datetime
 from app import db
 from app.models.ticket import Ticket, StatusEnum, PriorityEnum
 from app.models.ticket_update import TicketUpdate, UpdateStatusEnum
-from app.models.attachment import Attachment
+from app.models.department import Department
+from app.models.escalation import EscalationRequest
+from app.models.admin_notification import AdminNotification
 from app.models.user import User
 from app.utils.decorators import role_required
-from app.utils.helpers import allowed_file, save_uploaded_file
 from app.forms.staff_forms import (
     UpdateTicketForm, ResolveTicketForm,
-    ReplyForm, StaffThreadReplyForm, StaffTicketFilterForm
+    ReplyForm, StaffThreadReplyForm,
+    EscalationRequestForm, StaffTicketFilterForm
 )
 
 staff_bp = Blueprint('staff', __name__)
@@ -25,9 +27,7 @@ _STATUS_MAP = {
 }
 
 
-# ─────────────────────────────────────────────
-#  DASHBOARD
-# ─────────────────────────────────────────────
+# ── DASHBOARD ────────────────────────────────────────────────────────────────
 @staff_bp.route('/dashboard')
 @login_required
 @role_required('Staff')
@@ -49,8 +49,8 @@ def dashboard():
         query = query.filter(Ticket.Category == filter_form.category.data)
 
     tickets = query.order_by(Ticket.UpdatedAt.desc()).all()
-
     all_assigned = Ticket.query.filter_by(StaffId=current_user.UserId).all()
+
     resolved_tickets = [
         t for t in all_assigned
         if t.Status == StatusEnum.Resolved and t.ResolvedAt
@@ -73,7 +73,7 @@ def dashboard():
             if t.Status not in (StatusEnum.Resolved, StatusEnum.Rejected)
             and (datetime.utcnow() - t.CreatedAt).days > 3
         ),
-        'avg_hours'    : avg_resolution_hours,
+        'avg_hours': avg_resolution_hours,
     }
 
     return render_template(
@@ -84,25 +84,36 @@ def dashboard():
     )
 
 
-# ─────────────────────────────────────────────
-#  VIEW TICKET
-# ─────────────────────────────────────────────
+# ── VIEW TICKET ───────────────────────────────────────────────────────────────
 @staff_bp.route('/ticket/<int:ticket_id>')
 @login_required
 @role_required('Staff')
 def view_ticket(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
-    updates = (
-        ticket.updates
-        .filter_by(ParentUpdateId=None)
-        .order_by(TicketUpdate.CreatedAt.asc())
-        .all()
-    )
-    attachments  = ticket.attachments.filter_by(UpdateId=None).all()
-    update_form  = UpdateTicketForm()
-    resolve_form = ResolveTicketForm()
-    reply_form   = ReplyForm()
+    updates = (ticket.updates
+               .filter_by(ParentUpdateId=None)
+               .order_by(TicketUpdate.CreatedAt.asc())
+               .all())
+    attachments = ticket.attachments.filter_by(UpdateId=None).all()
+
+    update_form       = UpdateTicketForm()
+    resolve_form      = ResolveTicketForm()
+    reply_form        = ReplyForm()
     thread_reply_form = StaffThreadReplyForm()
+
+    # Escalation form — all departments except the current one
+    escalation_form = EscalationRequestForm()
+    other_depts = Department.query.filter(
+        Department.DepartmentId != ticket.DepartmentId
+    ).order_by(Department.Name).all()
+    escalation_form.target_dept.choices = [
+        (d.DepartmentId, d.Name) for d in other_depts
+    ]
+
+    # Pending escalation for this ticket (if any)
+    pending_escalation = EscalationRequest.query.filter_by(
+        TicketId=ticket_id, Status='Pending'
+    ).first()
 
     return render_template(
         'staff/view_ticket.html',
@@ -113,12 +124,12 @@ def view_ticket(ticket_id):
         resolve_form=resolve_form,
         reply_form=reply_form,
         thread_reply_form=thread_reply_form,
+        escalation_form=escalation_form,
+        pending_escalation=pending_escalation,
     )
 
 
-# ─────────────────────────────────────────────
-#  UPDATE STATUS
-# ─────────────────────────────────────────────
+# ── UPDATE STATUS ─────────────────────────────────────────────────────────────
 @staff_bp.route('/ticket/<int:ticket_id>/update', methods=['POST'])
 @login_required
 @role_required('Staff')
@@ -151,9 +162,7 @@ def update_ticket(ticket_id):
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
-# ─────────────────────────────────────────────
-#  RESOLVE
-# ─────────────────────────────────────────────
+# ── RESOLVE ───────────────────────────────────────────────────────────────────
 @staff_bp.route('/ticket/<int:ticket_id>/resolve', methods=['POST'])
 @login_required
 @role_required('Staff')
@@ -181,9 +190,7 @@ def resolve_ticket(ticket_id):
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
-# ─────────────────────────────────────────────
-#  REPLY TO STUDENT — auto sets Pending Info
-# ─────────────────────────────────────────────
+# ── REPLY TO STUDENT (sets Pending Info) ──────────────────────────────────────
 @staff_bp.route('/ticket/<int:ticket_id>/reply', methods=['POST'])
 @login_required
 @role_required('Staff')
@@ -192,7 +199,6 @@ def reply_ticket(ticket_id):
     form   = ReplyForm()
 
     if form.validate_on_submit():
-        # Auto-set status to Pending Info
         ticket.Status    = StatusEnum.PendingInfo
         ticket.UpdatedAt = datetime.utcnow()
 
@@ -201,7 +207,7 @@ def reply_ticket(ticket_id):
             UserId        = current_user.UserId,
             Comment       = form.comment.data.strip(),
             StatusChange  = UpdateStatusEnum.PendingInfo,
-            IsReplyThread = True,   # ← marks this as a threadable comment
+            IsReplyThread = True,
         )
         db.session.add(update)
         db.session.commit()
@@ -212,9 +218,7 @@ def reply_ticket(ticket_id):
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
-# ─────────────────────────────────────────────
-#  STAFF THREAD REPLY — reply inside an existing thread
-# ─────────────────────────────────────────────
+# ── STAFF THREAD REPLY ────────────────────────────────────────────────────────
 @staff_bp.route('/ticket/<int:ticket_id>/thread-reply/<int:update_id>', methods=['POST'])
 @login_required
 @role_required('Staff')
@@ -247,9 +251,71 @@ def thread_reply(ticket_id, update_id):
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
-# ─────────────────────────────────────────────
-#  HELPER
-# ─────────────────────────────────────────────
+# ── REQUEST ESCALATION ────────────────────────────────────────────────────────
+@staff_bp.route('/ticket/<int:ticket_id>/escalate', methods=['POST'])
+@login_required
+@role_required('Staff')
+def request_escalation(ticket_id):
+    ticket = _get_staff_ticket(ticket_id)
+    form   = EscalationRequestForm()
+
+    other_depts = Department.query.filter(
+        Department.DepartmentId != ticket.DepartmentId
+    ).all()
+    form.target_dept.choices = [(d.DepartmentId, d.Name) for d in other_depts]
+
+    if form.validate_on_submit():
+        # Only one pending escalation at a time
+        existing = EscalationRequest.query.filter_by(
+            TicketId=ticket_id, Status='Pending'
+        ).first()
+        if existing:
+            flash('An escalation request is already pending for this ticket.', 'warning')
+            return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+
+        target_dept = Department.query.get_or_404(form.target_dept.data)
+
+        escalation = EscalationRequest(
+            TicketId      = ticket_id,
+            RequestedById = current_user.UserId,
+            TargetDeptId  = form.target_dept.data,
+            Reason        = form.reason.data.strip(),
+            Status        = 'Pending',
+        )
+        db.session.add(escalation)
+
+        # Log on timeline
+        db.session.add(TicketUpdate(
+            TicketId      = ticket_id,
+            UserId        = current_user.UserId,
+            Comment       = (
+                f'[ESCALATION REQUESTED] Staff requested escalation to '
+                f'{target_dept.Name}. Reason: {form.reason.data.strip()}'
+            ),
+            IsReplyThread = False,
+        ))
+
+        # Notify admin
+        db.session.add(AdminNotification(
+            Type     = 'escalation_request',
+            Message  = (
+                f'Ticket #{ticket_id} "{ticket.Title}" — {current_user.FullName} '
+                f'requested escalation to {target_dept.Name}.'
+            ),
+            TicketId = ticket_id,
+            IsRead   = False,
+        ))
+
+        ticket.UpdatedAt = datetime.utcnow()
+        db.session.commit()
+        flash('Escalation request submitted to admin.', 'success')
+    else:
+        flash('Please fill in all escalation fields.', 'danger')
+
+    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+
+
+# ── HELPER ────────────────────────────────────────────────────────────────────
 def _get_staff_ticket(ticket_id: int) -> Ticket:
     ticket = Ticket.query.get_or_404(ticket_id)
     if ticket.StaffId != current_user.UserId:

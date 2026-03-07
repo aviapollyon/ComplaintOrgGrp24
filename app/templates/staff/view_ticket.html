@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/status_badge.html" import status_badge, update_status_badge %}
 {% block title %}Ticket #{{ ticket.TicketId }} — Staff View{% endblock %}
 
 {% block content %}
@@ -16,14 +17,7 @@
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ ticket.Title }}</h5>
-        {% set s = ticket.Status.value %}
-        {% if s == 'Submitted' %}      <span class="badge bg-secondary fs-6">Submitted</span>
-        {% elif s == 'Assigned' %}     <span class="badge bg-primary fs-6">Assigned</span>
-        {% elif s == 'In Progress' %}  <span class="badge bg-info text-dark fs-6">In Progress</span>
-        {% elif s == 'Pending Info' %} <span class="badge bg-warning text-dark fs-6"><i class="bi bi-question-circle me-1"></i>Pending Info</span>
-        {% elif s == 'Resolved' %}     <span class="badge bg-success fs-6">Resolved</span>
-        {% elif s == 'Rejected' %}     <span class="badge bg-danger fs-6">Rejected</span>
-        {% endif %}
+        {{ status_badge(ticket.Status.value) }}
       </div>
       <div class="card-body">
         <p class="text-muted">{{ ticket.Description }}</p>
@@ -63,12 +57,13 @@
     </div>
 
     <!-- Attachments -->
-    {% if attachments %}
+    {% set ticket_attachments = ticket.attachments.filter_by(UpdateId=None).all() %}
+    {% if ticket_attachments %}
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-header"><i class="bi bi-paperclip me-1"></i>Submitted Attachments</div>
       <div class="card-body">
         <div class="row g-2">
-          {% for a in attachments %}
+          {% for a in ticket_attachments %}
             {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
             <div class="col-6 col-md-4">
               <div class="border rounded p-2 text-center">
@@ -102,16 +97,13 @@
             {% set is_staff  = update.author.Role.value == 'Staff' %}
             {% set is_system = (update.StatusChange is not none and not is_staff) %}
 
-            {# ── System log ── #}
             {% if is_system %}
             <div class="d-flex gap-2 mb-3">
               <i class="bi bi-arrow-right-circle-fill text-secondary mt-1"></i>
               <div>
                 <span class="small text-muted">{{ update.Comment }}</span>
                 {% if update.StatusChange %}
-                  <span class="badge bg-primary bg-opacity-10 text-primary border border-primary ms-1">
-                    → {{ update.StatusChange.value }}
-                  </span>
+                  {{ update_status_badge(update.StatusChange.value) }}
                 {% endif %}
                 <div class="text-muted" style="font-size:0.72rem;">
                   {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
@@ -119,7 +111,6 @@
               </div>
             </div>
 
-            {# ── Staff comment ── #}
             {% elif is_staff %}
             <div class="mb-4">
               <div class="d-flex gap-2">
@@ -141,16 +132,17 @@
                         {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
                       </span>
                     </div>
-                    <p class="mb-0 small">{{ update.Comment }}</p>
+                    <p class="mb-1 small">{{ update.Comment }}</p>
+                    {% if update.StatusChange %}
+                      {{ update_status_badge(update.StatusChange.value) }}
+                    {% endif %}
                   </div>
 
-                  {# ── Thread replies — only shown on IsReplyThread comments ── #}
                   {% if update.IsReplyThread %}
-
                     {% for reply in update.replies.all() %}
                     <div class="d-flex gap-2 mt-2 ms-4">
                       <div class="rounded-circle
-                                  {% if reply.author.Role.value == 'Staff' %}bg-primary{% else %}bg-secondary{% endif %}
+                                  {{ 'bg-primary' if reply.author.Role.value == 'Staff' else 'bg-secondary' }}
                                   text-white d-flex align-items-center justify-content-center flex-shrink-0"
                            style="width:30px;height:30px;font-size:0.75rem;">
                         {{ reply.author.FullName[0].upper() }}
@@ -161,10 +153,8 @@
                             <span class="fw-semibold small">
                               {{ reply.author.FullName }}
                               <span class="badge
-                                {% if reply.author.Role.value == 'Staff' %}bg-primary{% else %}bg-secondary{% endif %}
-                                ms-1" style="font-size:0.65rem;">
-                                {{ reply.author.Role.value }}
-                              </span>
+                                {{ 'bg-primary' if reply.author.Role.value == 'Staff' else 'bg-secondary' }}
+                                ms-1" style="font-size:0.65rem;">{{ reply.author.Role.value }}</span>
                             </span>
                             <span class="text-muted" style="font-size:0.72rem;">
                               {{ reply.CreatedAt.strftime('%d %b %Y %H:%M') }}
@@ -173,7 +163,7 @@
                           <p class="mb-1 small">{{ reply.Comment }}</p>
                           {% for ra in reply.attachments.all() %}
                             {% set ext = ra.FileName.rsplit('.', 1)[-1].lower() %}
-                            {% if ext in ['png','jpg','jpeg'] %}
+                            {% if ext in ['png', 'jpg', 'jpeg'] %}
                               <a href="{{ attachment_url(ra) }}" target="_blank">
                                 <img src="{{ attachment_url(ra) }}"
                                      style="max-height:60px;border-radius:4px;" alt="{{ ra.FileName }}"/>
@@ -190,7 +180,6 @@
                     </div>
                     {% endfor %}
 
-                    {# ── Staff reply box (only on IsReplyThread comments) ── #}
                     {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
                     <div class="ms-4 mt-2">
                       <form method="POST"
@@ -208,14 +197,11 @@
                       </form>
                     </div>
                     {% endif %}
-
-                  {% endif %}{# end IsReplyThread #}
-
+                  {% endif %}
                 </div>
               </div>
             </div>
 
-            {# ── Student top-level log ── #}
             {% else %}
             <div class="d-flex gap-2 mb-3 justify-content-end">
               <div class="bg-light border rounded p-2" style="max-width:85%;">
@@ -234,19 +220,31 @@
               </div>
             </div>
             {% endif %}
-
           {% endfor %}
         {% else %}
           <p class="text-muted small mb-0">No activity yet.</p>
         {% endif %}
       </div>
     </div>
+  </div>
 
-  </div><!-- /col-lg-8 -->
-
-  <!-- RIGHT: Actions -->
+  <!-- RIGHT: Action Panels -->
   <div class="col-lg-4">
     {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
+
+    <!-- Pending Escalation Notice -->
+    {% if pending_escalation %}
+    <div class="alert alert-warning d-flex gap-2 align-items-start">
+      <i class="bi bi-arrow-up-right-circle-fill mt-1"></i>
+      <div>
+        <strong>Escalation Pending</strong><br>
+        <span class="small">Your escalation request to
+          <strong>{{ pending_escalation.target_dept.Name }}</strong>
+          is awaiting admin review.
+        </span>
+      </div>
+    </div>
+    {% endif %}
 
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-header bg-primary text-white fw-semibold">
@@ -276,17 +274,13 @@
         <span class="badge bg-dark ms-1" style="font-size:0.65rem;">Sets Pending Info</span>
       </div>
       <div class="card-body">
-        <p class="small text-muted mb-2">
-          Opens a reply thread and sets ticket status to
-          <strong>Pending Info</strong> automatically.
-        </p>
+        <p class="small text-muted mb-2">Opens a reply thread and sets status to
+          <strong>Pending Info</strong>.</p>
         <form method="POST"
               action="{{ url_for('staff.reply_ticket', ticket_id=ticket.TicketId) }}"
               novalidate>
           {{ reply_form.hidden_tag() }}
-          <div class="mb-3">
-            {{ reply_form.comment(class="form-control form-control-sm") }}
-          </div>
+          <div class="mb-3">{{ reply_form.comment(class="form-control form-control-sm") }}</div>
           {{ reply_form.submit(class="btn btn-warning btn-sm w-100 text-dark fw-semibold") }}
         </form>
       </div>
@@ -309,6 +303,34 @@
         </form>
       </div>
     </div>
+
+    <!-- Escalation Request Panel -->
+    {% if not pending_escalation %}
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-header bg-secondary text-white fw-semibold">
+        <i class="bi bi-arrow-up-right-circle me-1"></i>Request Escalation
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">
+          Request admin to move this ticket to another department.
+        </p>
+        <form method="POST"
+              action="{{ url_for('staff.request_escalation', ticket_id=ticket.TicketId) }}"
+              novalidate>
+          {{ escalation_form.hidden_tag() }}
+          <div class="mb-3">
+            {{ escalation_form.target_dept.label(class="form-label fw-semibold small") }}
+            {{ escalation_form.target_dept(class="form-select form-select-sm") }}
+          </div>
+          <div class="mb-3">
+            {{ escalation_form.reason.label(class="form-label fw-semibold small") }}
+            {{ escalation_form.reason(class="form-control form-control-sm") }}
+          </div>
+          {{ escalation_form.submit(class="btn btn-secondary btn-sm w-100") }}
+        </form>
+      </div>
+    </div>
+    {% endif %}
 
     {% else %}
     <div class="card border-0 shadow-sm">
@@ -334,6 +356,5 @@
     </div>
     {% endif %}
   </div>
-
 </div>
 {% endblock %}

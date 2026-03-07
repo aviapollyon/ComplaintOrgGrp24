@@ -1,0 +1,45 @@
+{% macro status_badge(status_value) %}
+  {% if status_value == 'Submitted' %}
+    <span class="badge bg-secondary">Submitted</span>
+  {% elif status_value == 'Assigned' %}
+    <span class="badge bg-primary">Assigned</span>
+  {% elif status_value == 'In Progress' %}
+    <span class="badge bg-info text-dark">In Progress</span>
+  {% elif status_value == 'Pending Info' %}
+    <span class="badge bg-warning text-dark">
+      <i class="bi bi-question-circle me-1"></i>Pending Info
+    </span>
+  {% elif status_value == 'Resolved' %}
+    <span class="badge bg-success">
+      <i class="bi bi-check-circle me-1"></i>Resolved
+    </span>
+  {% elif status_value == 'Rejected' %}
+    <span class="badge bg-danger">
+      <i class="bi bi-x-circle me-1"></i>Rejected
+    </span>
+  {% else %}
+    <span class="badge bg-light text-dark border">{{ status_value }}</span>
+  {% endif %}
+{% endmacro %}
+
+{% macro update_status_badge(status_change_value) %}
+  {% if status_change_value == 'Submitted' %}
+    <span class="badge bg-secondary border">→ Submitted</span>
+  {% elif status_change_value == 'Assigned' %}
+    <span class="badge bg-primary border">→ Assigned</span>
+  {% elif status_change_value == 'In Progress' %}
+    <span class="badge bg-info text-dark border">→ In Progress</span>
+  {% elif status_change_value == 'Pending Info' %}
+    <span class="badge bg-warning text-dark border">
+      <i class="bi bi-question-circle me-1"></i>→ Pending Info
+    </span>
+  {% elif status_change_value == 'Resolved' %}
+    <span class="badge bg-success border">
+      <i class="bi bi-check-circle me-1"></i>→ Resolved
+    </span>
+  {% elif status_change_value == 'Rejected' %}
+    <span class="badge bg-danger border">
+      <i class="bi bi-x-circle me-1"></i>→ Rejected
+    </span>
+  {% endif %}
+{% endmacro %}

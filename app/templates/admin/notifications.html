@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Notifications — Admin{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0"><i class="bi bi-bell me-2 text-primary"></i>Notifications</h3>
+</div>
+
+{% if notifications %}
+<div class="card border-0 shadow-sm">
+  <ul class="list-group list-group-flush">
+    {% for n in notifications %}
+    <li class="list-group-item {{ 'bg-light' if not n.IsRead else '' }}">
+      <div class="d-flex gap-3 align-items-start">
+        <div class="mt-1">
+          {% if n.Type == 'escalation_request' %}
+            <i class="bi bi-arrow-up-right-circle-fill text-warning fs-5"></i>
+          {% else %}
+            <i class="bi bi-exclamation-circle-fill text-danger fs-5"></i>
+          {% endif %}
+        </div>
+        <div class="flex-grow-1">
+          <div class="fw-semibold small">
+            {% if n.Type == 'escalation_request' %}
+              Escalation Request
+            {% else %}
+              Unassigned Ticket
+            {% endif %}
+          </div>
+          <p class="mb-1 small">{{ n.Message }}</p>
+          <div class="d-flex align-items-center gap-3">
+            <span class="text-muted" style="font-size:0.75rem;">
+              {{ n.CreatedAt.strftime('%d %b %Y %H:%M') }}
+            </span>
+            {% if n.TicketId %}
+              <a href="{{ url_for('admin.ticket_detail', ticket_id=n.TicketId) }}"
+                 class="btn btn-xs btn-sm btn-outline-primary py-0 px-2">
+                View Ticket #{{ n.TicketId }}
+              </a>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-bell-slash display-4 d-block mb-3"></i>
+  No notifications.
+</div>
+{% endif %}
+{% endblock %}

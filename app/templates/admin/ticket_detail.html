@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/status_badge.html" import status_badge, update_status_badge %}
 {% block title %}Ticket #{{ ticket.TicketId }} — Admin{% endblock %}
 {% block content %}
 <nav aria-label="breadcrumb" class="mb-3">
@@ -9,19 +10,12 @@
 </nav>
 
 <div class="row g-4">
-  <!-- LEFT: info + timeline -->
+  <!-- LEFT -->
   <div class="col-lg-8">
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ ticket.Title }}</h5>
-        {% set s = ticket.Status.value %}
-        {% if s == 'Submitted' %}     <span class="badge bg-secondary fs-6">Submitted</span>
-        {% elif s == 'Assigned' %}    <span class="badge bg-primary fs-6">Assigned</span>
-        {% elif s == 'In Progress' %} <span class="badge bg-info text-dark fs-6">In Progress</span>
-        {% elif s == 'Pending Info' %}<span class="badge bg-warning text-dark fs-6">Pending Info</span>
-        {% elif s == 'Resolved' %}    <span class="badge bg-success fs-6">Resolved</span>
-        {% elif s == 'Rejected' %}    <span class="badge bg-danger fs-6">Rejected</span>
-        {% endif %}
+        {{ status_badge(ticket.Status.value) }}
       </div>
       <div class="card-body">
         <p class="text-muted">{{ ticket.Description }}</p>
@@ -53,12 +47,6 @@
             <div class="small text-muted">Submitted</div>
             <span class="small">{{ ticket.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
           </div>
-          {% if ticket.ResolvedAt %}
-          <div class="col-sm-4">
-            <div class="small text-muted">Resolved At</div>
-            <span class="small">{{ ticket.ResolvedAt.strftime('%d %b %Y %H:%M') }}</span>
-          </div>
-          {% endif %}
         </div>
       </div>
     </div>
@@ -109,9 +97,7 @@
             <div>
               <span class="small text-muted">{{ update.Comment }}</span>
               {% if update.StatusChange %}
-                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary ms-1">
-                  → {{ update.StatusChange.value }}
-                </span>
+                {{ update_status_badge(update.StatusChange.value) }}
               {% endif %}
               <div class="text-muted" style="font-size:0.72rem;">
                 {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
@@ -135,15 +121,17 @@
                     {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
                   </span>
                 </div>
-                <p class="mb-0 small">{{ update.Comment }}</p>
+                <p class="mb-1 small">{{ update.Comment }}</p>
+                {% if update.StatusChange %}
+                  {{ update_status_badge(update.StatusChange.value) }}
+                {% endif %}
               </div>
             </div>
           </div>
 
           {% else %}
           <div class="d-flex gap-2 mb-3">
-            <div class="rounded-circle
-                        {{ 'bg-primary' if is_staff else 'bg-secondary' }}
+            <div class="rounded-circle {{ 'bg-primary' if is_staff else 'bg-secondary' }}
                         text-white d-flex align-items-center justify-content-center flex-shrink-0"
                  style="width:32px;height:32px;font-size:0.75rem;">
               {{ update.author.FullName[0].upper() }}
@@ -160,7 +148,10 @@
                     {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
                   </span>
                 </div>
-                <p class="mb-0 small">{{ update.Comment }}</p>
+                <p class="mb-1 small">{{ update.Comment }}</p>
+                {% if update.StatusChange %}
+                  {{ update_status_badge(update.StatusChange.value) }}
+                {% endif %}
               </div>
               {% if update.IsReplyThread %}
                 {% for reply in update.replies.all() %}
@@ -192,8 +183,55 @@
     </div>
   </div>
 
-  <!-- RIGHT: Admin Actions -->
+  <!-- RIGHT: Actions -->
   <div class="col-lg-4">
+
+    <!-- Pending Escalation Alert -->
+    {% if pending_escalation %}
+    <div class="card border-warning shadow-sm mb-3">
+      <div class="card-header bg-warning text-dark fw-semibold">
+        <i class="bi bi-arrow-up-right-circle-fill me-1"></i>Pending Escalation Request
+      </div>
+      <div class="card-body">
+        <p class="small mb-1">
+          <strong>Requested by:</strong> {{ pending_escalation.requested_by.FullName }}
+        </p>
+        <p class="small mb-1">
+          <strong>Target Department:</strong> {{ pending_escalation.target_dept.Name }}
+        </p>
+        <p class="small mb-3">
+          <strong>Reason:</strong> {{ pending_escalation.Reason }}
+        </p>
+
+        <!-- Approve -->
+        <form method="POST"
+              action="{{ url_for('admin.review_escalation', ticket_id=ticket.TicketId) }}"
+              class="mb-2" novalidate>
+          {{ escalation_form.hidden_tag() }}
+          <div class="mb-2">
+            {{ escalation_form.staff_id.label(class="form-label fw-semibold small") }}
+            {{ escalation_form.staff_id(class="form-select form-select-sm") }}
+            <div class="form-text">Staff in target department.</div>
+          </div>
+          <button type="submit" name="action" value="approve"
+                  class="btn btn-success btn-sm w-100">
+            <i class="bi bi-check-circle me-1"></i>Approve &amp; Reassign
+          </button>
+        </form>
+
+        <!-- Reject -->
+        <form method="POST"
+              action="{{ url_for('admin.review_escalation', ticket_id=ticket.TicketId) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" name="action" value="reject"
+                  class="btn btn-outline-danger btn-sm w-100"
+                  onclick="return confirm('Reject this escalation request?')">
+            <i class="bi bi-x-circle me-1"></i>Reject Escalation
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
 
     <!-- Reassign -->
     <div class="card shadow-sm border-0 mb-3">
@@ -209,16 +247,12 @@
           <div class="mb-3">
             {{ reassign_form.staff_id.label(class="form-label fw-semibold small") }}
             {{ reassign_form.staff_id(class="form-select form-select-sm") }}
-            <div class="form-text">Number in brackets = current open tickets.</div>
+            <div class="form-text">Numbers in brackets = current open tickets.</div>
           </div>
           {{ reassign_form.submit(class="btn btn-primary btn-sm w-100") }}
         </form>
         {% else %}
-          <p class="text-muted small mb-0">
-            No active staff found in the
-            <strong>{{ ticket.department.Name if ticket.department else 'assigned' }}</strong>
-            department.
-          </p>
+        <p class="text-muted small mb-0">No active staff in this department.</p>
         {% endif %}
       </div>
     </div>
@@ -246,7 +280,7 @@
       </div>
     </div>
 
-    <!-- Feedback (if resolved) -->
+    <!-- Feedback -->
     {% if ticket.FeedbackRating %}
     <div class="card border-success shadow-sm">
       <div class="card-header bg-success text-white fw-semibold">

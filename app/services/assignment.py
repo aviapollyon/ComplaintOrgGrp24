@@ -1,24 +1,11 @@
-"""
-Ticket auto-assignment service.
-
-Rules (in order):
-1. Find all Staff in the ticket's department.
-2. From those, collect "available" staff — fewer than 5 open tickets.
-3. If available staff exist → assign to the one with the LEAST open tickets.
-4. If no available staff → assign randomly from ALL staff in the department.
-5. If the department has NO staff at all → leave StaffId as None (unassigned).
-"""
-
 import random
 from app.models.user import User, RoleEnum
 from app.models.ticket import Ticket, StatusEnum
 
-
-ASSIGNMENT_LIMIT = 5   # max open tickets before a staff member is "busy"
+ASSIGNMENT_LIMIT = 5
 
 
 def _open_ticket_count(staff_user: User) -> int:
-    """Count active (non-closed) tickets assigned to a staff member."""
     return Ticket.query.filter(
         Ticket.StaffId == staff_user.UserId,
         ~Ticket.Status.in_([StatusEnum.Resolved, StatusEnum.Rejected])
@@ -26,40 +13,49 @@ def _open_ticket_count(staff_user: User) -> int:
 
 
 def auto_assign_ticket(ticket: Ticket) -> User | None:
-    """
-    Determine which staff member to assign *ticket* to.
-    Mutates ticket.StaffId and ticket.Status in-place.
-    Returns the assigned User or None.
-    """
+    from app import db
+    from app.models.admin_notification import AdminNotification
+
     if ticket.DepartmentId is None:
+        _notify_admin(ticket, 'unassigned_ticket',
+                      f'Ticket #{ticket.TicketId} "{ticket.Title}" could not be '
+                      f'auto-assigned — no department mapped.')
         return None
 
-    # All staff in this department
     dept_staff: list[User] = User.query.filter_by(
         Role=RoleEnum.Staff,
-        DepartmentId=ticket.DepartmentId
+        DepartmentId=ticket.DepartmentId,
+        IsActive=True
     ).all()
 
     if not dept_staff:
+        _notify_admin(ticket, 'unassigned_ticket',
+                      f'Ticket #{ticket.TicketId} "{ticket.Title}" has no staff '
+                      f'in its department and was left unassigned.')
         return None
 
-    # Annotate each staff member with their current open-ticket load
     staff_with_load = [
         (member, _open_ticket_count(member))
         for member in dept_staff
     ]
-
-    # Available = load < ASSIGNMENT_LIMIT
     available = [(m, load) for m, load in staff_with_load if load < ASSIGNMENT_LIMIT]
 
     if available:
-        # Pick the least-loaded available staff member
         chosen, _ = min(available, key=lambda x: x[1])
     else:
-        # No one is available — assign randomly from the whole department
         chosen = random.choice(dept_staff)
 
     ticket.StaffId = chosen.UserId
     ticket.Status  = StatusEnum.Assigned
-
     return chosen
+
+
+def _notify_admin(ticket: Ticket, notif_type: str, message: str):
+    from app import db
+    from app.models.admin_notification import AdminNotification
+    db.session.add(AdminNotification(
+        Type      = notif_type,
+        Message   = message,
+        TicketId  = ticket.TicketId,
+        IsRead    = False,
+    ))

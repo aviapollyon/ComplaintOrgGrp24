@@ -2,8 +2,6 @@ from flask_wtf import FlaskForm
 from wtforms import TextAreaField, SelectField, SubmitField, StringField
 from wtforms.validators import DataRequired, Length, Optional
 
-# Resolved removed  — use dedicated Resolve panel
-# Pending Info removed — auto-set when staff uses Reply to Student panel
 STATUS_CHOICES = [
     ('In Progress', 'In Progress'),
     ('Rejected',    'Rejected'),
@@ -38,61 +36,47 @@ FILTER_CATEGORY_CHOICES = [
 
 
 class UpdateTicketForm(FlaskForm):
-    status = SelectField(
-        'New Status',
-        choices=STATUS_CHOICES,
-        validators=[DataRequired()]
-    )
-    comment = TextAreaField(
-        'Comment / Notes',
-        validators=[DataRequired(), Length(min=5, max=2000)],
-        render_kw={
-            "rows": 4,
-            "placeholder": "Describe the action taken..."
-        }
-    )
+    status = SelectField('New Status', choices=STATUS_CHOICES,
+                         validators=[DataRequired()])
+    comment = TextAreaField('Comment / Notes',
+                            validators=[DataRequired(), Length(min=5, max=2000)],
+                            render_kw={"rows": 4,
+                                       "placeholder": "Describe the action taken..."})
     submit = SubmitField('Update Ticket')
 
 
 class ResolveTicketForm(FlaskForm):
-    resolution = TextAreaField(
-        'Resolution Details',
-        validators=[DataRequired(), Length(min=10, max=3000)],
-        render_kw={
-            "rows": 5,
-            "placeholder": "Describe how the issue was resolved..."
-        }
-    )
+    resolution = TextAreaField('Resolution Details',
+                               validators=[DataRequired(), Length(min=10, max=3000)],
+                               render_kw={"rows": 5,
+                                          "placeholder": "Describe how the issue was resolved..."})
     submit = SubmitField('Mark as Resolved')
 
 
 class ReplyForm(FlaskForm):
-    """
-    Staff reply to student.
-    Posting this automatically sets ticket status to Pending Info.
-    """
-    comment = TextAreaField(
-        'Message to Student',
-        validators=[DataRequired(), Length(min=5, max=2000)],
-        render_kw={
-            "rows": 4,
-            "placeholder": "Ask for more information or send a message..."
-        }
-    )
+    comment = TextAreaField('Message to Student',
+                            validators=[DataRequired(), Length(min=5, max=2000)],
+                            render_kw={"rows": 4,
+                                       "placeholder": "Ask for more information or send a message..."})
     submit = SubmitField('Send Reply')
 
 
 class StaffThreadReplyForm(FlaskForm):
-    """
-    Staff reply inside an existing reply thread (their own or student's reply).
-    No status change.
-    """
-    comment = TextAreaField(
-        'Reply',
-        validators=[DataRequired(), Length(min=2, max=2000)],
-        render_kw={"rows": 2, "placeholder": "Continue the conversation..."}
-    )
+    comment = TextAreaField('Reply',
+                            validators=[DataRequired(), Length(min=2, max=2000)],
+                            render_kw={"rows": 2,
+                                       "placeholder": "Continue the conversation..."})
     submit = SubmitField('Reply')
+
+
+class EscalationRequestForm(FlaskForm):
+    target_dept = SelectField('Escalate To Department', coerce=int,
+                              validators=[DataRequired()])
+    reason      = TextAreaField('Reason for Escalation',
+                                validators=[DataRequired(), Length(min=10, max=1000)],
+                                render_kw={"rows": 4,
+                                           "placeholder": "Explain why this ticket needs to be escalated..."})
+    submit = SubmitField('Request Escalation')
 
 
 class StaffTicketFilterForm(FlaskForm):
