@@ -31,9 +31,21 @@ def create_app(config_name='default'):
     @app.context_processor
     def inject_globals():
         from app.utils.helpers import attachment_url
+        from flask_login import current_user
+
+        active_announcements = []
+        if current_user.is_authenticated:
+            from app.models.announcement import Announcement
+            role = current_user.Role.value
+            active_announcements = Announcement.query.filter(
+                Announcement.IsActive == True,  # noqa: E712
+                Announcement.TargetAudience.in_(['All', role])
+            ).order_by(Announcement.CreatedAt.desc()).all()
+
         return {
-            'now'            : datetime.utcnow(),
-            'attachment_url' : attachment_url,
+            'now'                  : datetime.utcnow(),
+            'attachment_url'       : attachment_url,
+            'active_announcements' : active_announcements,
         }
 
     from app.routes.auth    import auth_bp

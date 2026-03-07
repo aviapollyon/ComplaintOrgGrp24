@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if edit else 'Add' }} User — Admin{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-6">
+    <nav aria-label="breadcrumb" class="mb-3">
+      <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('admin.users') }}">Users</a></li>
+        <li class="breadcrumb-item active">{{ 'Edit' if edit else 'Add' }} User</li>
+      </ol>
+    </nav>
+    <div class="card shadow-sm border-0">
+      <div class="card-header {{ 'bg-secondary' if edit else 'bg-primary' }} text-white">
+        <h5 class="mb-0">
+          <i class="bi {{ 'bi-pencil' if edit else 'bi-person-plus' }} me-2"></i>
+          {{ 'Edit' if edit else 'Add New' }} User
+        </h5>
+      </div>
+      <div class="card-body p-4">
+        <form method="POST" novalidate>
+          {{ form.hidden_tag() }}
+
+          <div class="mb-3">
+            {{ form.full_name.label(class="form-label fw-semibold") }}
+            {{ form.full_name(class="form-control" + (" is-invalid" if form.full_name.errors else "")) }}
+            {% for e in form.full_name.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+
+          <div class="mb-3">
+            {{ form.email.label(class="form-label fw-semibold") }}
+            {{ form.email(class="form-control" + (" is-invalid" if form.email.errors else "")) }}
+            {% for e in form.email.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+
+          {% if not edit %}
+          <div class="mb-3">
+            {{ form.password.label(class="form-label fw-semibold") }}
+            {{ form.password(class="form-control" + (" is-invalid" if form.password.errors else "")) }}
+            {% for e in form.password.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="mb-3">
+            {{ form.confirm.label(class="form-label fw-semibold") }}
+            {{ form.confirm(class="form-control" + (" is-invalid" if form.confirm.errors else "")) }}
+            {% for e in form.confirm.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          {% endif %}
+
+          <div class="mb-3">
+            {{ form.role.label(class="form-label fw-semibold") }}
+            {{ form.role(class="form-select") }}
+          </div>
+
+          <div class="mb-4">
+            {{ form.department.label(class="form-label fw-semibold") }}
+            {{ form.department(class="form-select") }}
+            <div class="form-text">Required for Staff. Optional for Students.</div>
+          </div>
+
+          <div class="d-flex gap-2">
+            {{ form.submit(class="btn btn-primary") }}
+            <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary">Cancel</a>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

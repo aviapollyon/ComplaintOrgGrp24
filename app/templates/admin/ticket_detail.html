@@ -1,0 +1,271 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket.TicketId }} — Admin{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('admin.tickets') }}">Tickets</a></li>
+    <li class="breadcrumb-item active">Ticket #{{ ticket.TicketId }}</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+  <!-- LEFT: info + timeline -->
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">{{ ticket.Title }}</h5>
+        {% set s = ticket.Status.value %}
+        {% if s == 'Submitted' %}     <span class="badge bg-secondary fs-6">Submitted</span>
+        {% elif s == 'Assigned' %}    <span class="badge bg-primary fs-6">Assigned</span>
+        {% elif s == 'In Progress' %} <span class="badge bg-info text-dark fs-6">In Progress</span>
+        {% elif s == 'Pending Info' %}<span class="badge bg-warning text-dark fs-6">Pending Info</span>
+        {% elif s == 'Resolved' %}    <span class="badge bg-success fs-6">Resolved</span>
+        {% elif s == 'Rejected' %}    <span class="badge bg-danger fs-6">Rejected</span>
+        {% endif %}
+      </div>
+      <div class="card-body">
+        <p class="text-muted">{{ ticket.Description }}</p>
+        <div class="row g-3 mt-1">
+          <div class="col-sm-4">
+            <div class="small text-muted">Student</div>
+            <span class="small fw-semibold">{{ ticket.student.FullName if ticket.student else '—' }}</span>
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Assigned Staff</div>
+            <span class="small">{{ ticket.staff.FullName if ticket.staff else 'Unassigned' }}</span>
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Department</div>
+            <span class="small">{{ ticket.department.Name if ticket.department else '—' }}</span>
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Category</div>
+            <span class="badge bg-secondary">{{ ticket.Category }}</span>
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Priority</div>
+            {% if ticket.Priority.value == 'High' %}     <span class="badge bg-danger">High</span>
+            {% elif ticket.Priority.value == 'Medium' %} <span class="badge bg-warning text-dark">Medium</span>
+            {% else %}                                   <span class="badge bg-success">Low</span>
+            {% endif %}
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Submitted</div>
+            <span class="small">{{ ticket.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
+          </div>
+          {% if ticket.ResolvedAt %}
+          <div class="col-sm-4">
+            <div class="small text-muted">Resolved At</div>
+            <span class="small">{{ ticket.ResolvedAt.strftime('%d %b %Y %H:%M') }}</span>
+          </div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Attachments -->
+    {% if attachments %}
+    <div class="card shadow-sm border-0 mb-4">
+      <div class="card-header"><i class="bi bi-paperclip me-1"></i>Attachments</div>
+      <div class="card-body">
+        <div class="row g-2">
+          {% for a in attachments %}
+            {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
+            <div class="col-6 col-md-4">
+              <div class="border rounded p-2 text-center">
+                {% if ext in ['png','jpg','jpeg'] %}
+                  <a href="{{ attachment_url(a) }}" target="_blank">
+                    <img src="{{ attachment_url(a) }}" class="img-fluid rounded mb-1"
+                         style="max-height:100px;object-fit:cover;" alt="{{ a.FileName }}"/>
+                  </a>
+                {% else %}
+                  <i class="bi bi-file-earmark-text display-6 text-primary d-block mb-1"></i>
+                {% endif %}
+                <div class="small text-truncate">{{ a.FileName }}</div>
+                <a href="{{ attachment_url(a) }}" target="_blank"
+                   class="btn btn-sm btn-outline-primary mt-1">
+                  <i class="bi bi-download me-1"></i>Open
+                </a>
+              </div>
+            </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Timeline -->
+    <div class="card shadow-sm border-0">
+      <div class="card-header"><i class="bi bi-clock-history me-1"></i>Activity Timeline</div>
+      <div class="card-body p-3">
+        {% for update in updates %}
+          {% set is_staff  = update.author.Role.value == 'Staff' %}
+          {% set is_admin  = update.author.Role.value == 'Admin' %}
+          {% set is_system = (update.StatusChange is not none and not is_staff and not is_admin) %}
+
+          {% if is_system %}
+          <div class="d-flex gap-2 mb-2">
+            <i class="bi bi-arrow-right-circle-fill text-secondary mt-1"></i>
+            <div>
+              <span class="small text-muted">{{ update.Comment }}</span>
+              {% if update.StatusChange %}
+                <span class="badge bg-primary bg-opacity-10 text-primary border border-primary ms-1">
+                  → {{ update.StatusChange.value }}
+                </span>
+              {% endif %}
+              <div class="text-muted" style="font-size:0.72rem;">
+                {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
+              </div>
+            </div>
+          </div>
+
+          {% elif is_admin %}
+          <div class="d-flex gap-2 mb-3">
+            <div class="rounded-circle bg-danger text-white d-flex align-items-center
+                        justify-content-center flex-shrink-0"
+                 style="width:32px;height:32px;font-size:0.75rem;">A</div>
+            <div class="flex-grow-1">
+              <div class="bg-danger bg-opacity-10 border border-danger rounded p-2">
+                <div class="d-flex justify-content-between mb-1">
+                  <span class="fw-semibold small text-danger">
+                    {{ update.author.FullName }}
+                    <span class="badge bg-danger ms-1" style="font-size:0.65rem;">Admin</span>
+                  </span>
+                  <span class="text-muted" style="font-size:0.72rem;">
+                    {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                  </span>
+                </div>
+                <p class="mb-0 small">{{ update.Comment }}</p>
+              </div>
+            </div>
+          </div>
+
+          {% else %}
+          <div class="d-flex gap-2 mb-3">
+            <div class="rounded-circle
+                        {{ 'bg-primary' if is_staff else 'bg-secondary' }}
+                        text-white d-flex align-items-center justify-content-center flex-shrink-0"
+                 style="width:32px;height:32px;font-size:0.75rem;">
+              {{ update.author.FullName[0].upper() }}
+            </div>
+            <div class="flex-grow-1">
+              <div class="{{ 'bg-primary bg-opacity-10 border border-primary' if is_staff else 'bg-light border' }} rounded p-2">
+                <div class="d-flex justify-content-between mb-1">
+                  <span class="fw-semibold small {{ 'text-primary' if is_staff else '' }}">
+                    {{ update.author.FullName }}
+                    <span class="badge {{ 'bg-primary' if is_staff else 'bg-secondary' }} ms-1"
+                          style="font-size:0.65rem;">{{ update.author.Role.value }}</span>
+                  </span>
+                  <span class="text-muted" style="font-size:0.72rem;">
+                    {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                  </span>
+                </div>
+                <p class="mb-0 small">{{ update.Comment }}</p>
+              </div>
+              {% if update.IsReplyThread %}
+                {% for reply in update.replies.all() %}
+                <div class="ms-4 mt-2 d-flex gap-2">
+                  <div class="rounded-circle bg-secondary text-white d-flex align-items-center
+                              justify-content-center flex-shrink-0"
+                       style="width:26px;height:26px;font-size:0.7rem;">
+                    {{ reply.author.FullName[0].upper() }}
+                  </div>
+                  <div class="bg-light border rounded p-2 flex-grow-1">
+                    <div class="d-flex justify-content-between mb-1">
+                      <span class="fw-semibold small">{{ reply.author.FullName }}</span>
+                      <span class="text-muted" style="font-size:0.7rem;">
+                        {{ reply.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                      </span>
+                    </div>
+                    <p class="mb-0 small">{{ reply.Comment }}</p>
+                  </div>
+                </div>
+                {% endfor %}
+              {% endif %}
+            </div>
+          </div>
+          {% endif %}
+        {% else %}
+          <p class="text-muted small mb-0">No activity yet.</p>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Admin Actions -->
+  <div class="col-lg-4">
+
+    <!-- Reassign -->
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-header bg-primary text-white fw-semibold">
+        <i class="bi bi-person-fill-up me-1"></i>Reassign Ticket
+      </div>
+      <div class="card-body">
+        {% if reassign_form.staff_id.choices %}
+        <form method="POST"
+              action="{{ url_for('admin.reassign_ticket', ticket_id=ticket.TicketId) }}"
+              novalidate>
+          {{ reassign_form.hidden_tag() }}
+          <div class="mb-3">
+            {{ reassign_form.staff_id.label(class="form-label fw-semibold small") }}
+            {{ reassign_form.staff_id(class="form-select form-select-sm") }}
+            <div class="form-text">Number in brackets = current open tickets.</div>
+          </div>
+          {{ reassign_form.submit(class="btn btn-primary btn-sm w-100") }}
+        </form>
+        {% else %}
+          <p class="text-muted small mb-0">
+            No active staff found in the
+            <strong>{{ ticket.department.Name if ticket.department else 'assigned' }}</strong>
+            department.
+          </p>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Force Status -->
+    <div class="card shadow-sm border-warning mb-3">
+      <div class="card-header bg-warning text-dark fw-semibold">
+        <i class="bi bi-shield-fill-exclamation me-1"></i>Force Status Override
+      </div>
+      <div class="card-body">
+        <form method="POST"
+              action="{{ url_for('admin.force_status', ticket_id=ticket.TicketId) }}"
+              novalidate>
+          {{ force_form.hidden_tag() }}
+          <div class="mb-3">
+            {{ force_form.status.label(class="form-label fw-semibold small") }}
+            {{ force_form.status(class="form-select form-select-sm") }}
+          </div>
+          <div class="mb-3">
+            {{ force_form.comment.label(class="form-label fw-semibold small") }}
+            {{ force_form.comment(class="form-control form-control-sm") }}
+          </div>
+          {{ force_form.submit(class="btn btn-warning btn-sm w-100 text-dark fw-semibold") }}
+        </form>
+      </div>
+    </div>
+
+    <!-- Feedback (if resolved) -->
+    {% if ticket.FeedbackRating %}
+    <div class="card border-success shadow-sm">
+      <div class="card-header bg-success text-white fw-semibold">
+        <i class="bi bi-star-fill me-1"></i>Student Feedback
+      </div>
+      <div class="card-body">
+        {% for i in range(ticket.FeedbackRating) %}
+          <i class="bi bi-star-fill text-warning"></i>
+        {% endfor %}
+        {% for i in range(5 - ticket.FeedbackRating) %}
+          <i class="bi bi-star text-muted"></i>
+        {% endfor %}
+        {% if ticket.FeedbackComment %}
+          <p class="small text-muted mt-2 mb-0">{{ ticket.FeedbackComment }}</p>
+        {% endif %}
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endblock %}

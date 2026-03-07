@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Departments — Admin{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0"><i class="bi bi-building me-2 text-primary"></i>Department Management</h3>
+  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDeptModal">
+    <i class="bi bi-plus-circle me-1"></i>Add Department
+  </button>
+</div>
+
+<div class="row g-4">
+  {% for ds in dept_data %}
+  <div class="col-md-6 col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start mb-2">
+          <h6 class="fw-bold mb-0">{{ ds.dept.Name }}</h6>
+          <a href="{{ url_for('admin.edit_department', dept_id=ds.dept.DepartmentId) }}"
+             class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-pencil"></i>
+          </a>
+        </div>
+        <p class="small text-muted mb-3">
+          {{ ds.dept.Description or 'No description provided.' }}
+        </p>
+        <div class="row g-2 text-center">
+          <div class="col-4">
+            <div class="bg-primary bg-opacity-10 rounded p-2">
+              <div class="fw-bold text-primary">{{ ds.staff_count }}</div>
+              <div class="small text-muted">Staff</div>
+            </div>
+          </div>
+          <div class="col-4">
+            <div class="bg-danger bg-opacity-10 rounded p-2">
+              <div class="fw-bold text-danger">{{ ds.open_tickets }}</div>
+              <div class="small text-muted">Open</div>
+            </div>
+          </div>
+          <div class="col-4">
+            <div class="bg-light rounded p-2">
+              <a href="{{ url_for('admin.department_detail', dept_id=ds.dept.DepartmentId) }}"
+                 class="btn btn-sm btn-outline-primary w-100">View</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Add Department Modal -->
+<div class="modal fade" id="addDeptModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Add Department</h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="POST" action="{{ url_for('admin.add_department') }}" novalidate>
+        {{ add_form.hidden_tag() }}
+        <div class="modal-body">
+          <div class="mb-3">
+            {{ add_form.name.label(class="form-label fw-semibold") }}
+            {{ add_form.name(class="form-control") }}
+          </div>
+          <div class="mb-3">
+            {{ add_form.description.label(class="form-label fw-semibold") }}
+            {{ add_form.description(class="form-control") }}
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+          {{ add_form.submit(class="btn btn-primary") }}
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

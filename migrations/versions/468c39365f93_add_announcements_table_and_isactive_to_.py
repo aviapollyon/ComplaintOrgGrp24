@@ -1,8 +1,8 @@
-"""Add IsReplyThread to ticket_updates
+"""Add announcements table and IsActive to users
 
-Revision ID: 0998b255e043
+Revision ID: 468c39365f93
 Revises: 
-Create Date: 2026-03-05 09:13:28.026037
+Create Date: 2026-03-07 11:04:29.285609
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '0998b255e043'
+revision = '468c39365f93'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -32,12 +32,24 @@ def upgrade():
     sa.Column('Email', sa.String(length=150), nullable=False),
     sa.Column('PasswordHash', sa.String(length=256), nullable=False),
     sa.Column('Role', sa.Enum('Student', 'Staff', 'Admin', name='roleenum'), nullable=False),
+    sa.Column('IsActive', sa.Boolean(), nullable=False),
     sa.Column('DepartmentId', sa.Integer(), nullable=True),
     sa.Column('CreatedAt', sa.DateTime(), nullable=True),
     sa.Column('UpdatedAt', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['DepartmentId'], ['departments.DepartmentId'], name='fk_users_department_id'),
     sa.PrimaryKeyConstraint('UserId'),
     sa.UniqueConstraint('Email')
+    )
+    op.create_table('announcements',
+    sa.Column('AnnouncementId', sa.Integer(), nullable=False),
+    sa.Column('Title', sa.String(length=200), nullable=False),
+    sa.Column('Message', sa.Text(), nullable=False),
+    sa.Column('TargetAudience', sa.String(length=20), nullable=False),
+    sa.Column('CreatedBy', sa.Integer(), nullable=False),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
+    sa.Column('IsActive', sa.Boolean(), nullable=False),
+    sa.ForeignKeyConstraint(['CreatedBy'], ['users.UserId'], name='fk_announcements_created_by'),
+    sa.PrimaryKeyConstraint('AnnouncementId')
     )
     op.create_table('tickets',
     sa.Column('TicketId', sa.Integer(), nullable=False),
@@ -93,6 +105,7 @@ def downgrade():
     op.drop_table('attachments')
     op.drop_table('ticket_updates')
     op.drop_table('tickets')
+    op.drop_table('announcements')
     op.drop_table('users')
     op.drop_table('departments')
     # ### end Alembic commands ###

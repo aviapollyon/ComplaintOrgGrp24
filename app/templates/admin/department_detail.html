@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ dept.Name }} — Admin{% endblock %}
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('admin.departments') }}">Departments</a></li>
+    <li class="breadcrumb-item active">{{ dept.Name }}</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0"><i class="bi bi-building me-2 text-primary"></i>{{ dept.Name }}</h3>
+  <a href="{{ url_for('admin.edit_department', dept_id=dept.DepartmentId) }}"
+     class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-pencil me-1"></i>Edit
+  </a>
+</div>
+
+{% if dept.Description %}
+<p class="text-muted mb-4">{{ dept.Description }}</p>
+{% endif %}
+
+<div class="row g-4">
+  <!-- Staff -->
+  <div class="col-md-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-people me-1"></i>Staff ({{ staff_list | length }})
+      </div>
+      {% if staff_list %}
+      <ul class="list-group list-group-flush">
+        {% for s in staff_list %}
+        <li class="list-group-item d-flex justify-content-between align-items-center">
+          <div>
+            <a href="{{ url_for('admin.user_detail', user_id=s.UserId) }}"
+               class="text-decoration-none fw-semibold small">{{ s.FullName }}</a>
+            <div class="text-muted" style="font-size:0.75rem;">{{ s.Email }}</div>
+          </div>
+          {% if not s.IsActive %}
+            <span class="badge bg-secondary">Inactive</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% else %}
+      <div class="card-body text-center text-muted py-3">No staff in this department.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Tickets -->
+  <div class="col-md-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-ticket-detailed me-1"></i>Tickets ({{ tickets | length }})
+      </div>
+      {% if tickets %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0 small">
+          <thead class="table-light">
+            <tr><th>#</th><th>Title</th><th>Status</th><th>Assigned</th></tr>
+          </thead>
+          <tbody>
+            {% for t in tickets %}
+            <tr>
+              <td class="text-muted">#{{ t.TicketId }}</td>
+              <td>
+                <a href="{{ url_for('admin.ticket_detail', ticket_id=t.TicketId) }}"
+                   class="text-decoration-none">{{ t.Title }}</a>
+              </td>
+              <td>
+                {% set s = t.Status.value %}
+                {% if s == 'Submitted' %}     <span class="badge bg-secondary">Submitted</span>
+                {% elif s == 'Assigned' %}    <span class="badge bg-primary">Assigned</span>
+                {% elif s == 'In Progress' %} <span class="badge bg-info text-dark">In Progress</span>
+                {% elif s == 'Pending Info' %}<span class="badge bg-warning text-dark">Pending Info</span>
+                {% elif s == 'Resolved' %}    <span class="badge bg-success">Resolved</span>
+                {% elif s == 'Rejected' %}    <span class="badge bg-danger">Rejected</span>
+                {% endif %}
+              </td>
+              <td>{{ t.staff.FullName if t.staff else '—' }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <div class="card-body text-center text-muted py-3">No tickets for this department.</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

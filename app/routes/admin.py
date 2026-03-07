@@ -1,18 +1,686 @@
-from flask import Blueprint, render_template
-from flask_login import login_required
-from app.utils.decorators import role_required
-from app.models.user import User
-from app.models.ticket import Ticket
+import csv
+import io
+from datetime import datetime
+from collections import defaultdict
+
+from flask import (
+    Blueprint, render_template, redirect, url_for,
+    flash, request, abort, Response
+)
+from flask_login import login_required, current_user
+from sqlalchemy import func
+
+from app import db
+from app.models.user         import User, RoleEnum
+from app.models.ticket       import Ticket, StatusEnum, PriorityEnum
+from app.models.ticket_update import TicketUpdate, UpdateStatusEnum
+from app.models.department   import Department
+from app.models.announcement import Announcement
+from app.utils.decorators    import role_required
+from app.forms.admin_forms   import (
+    AddUserForm, EditUserForm,
+    AdminTicketFilterForm, AdminUserFilterForm,
+    ReassignTicketForm, ForceStatusForm,
+    AddDepartmentForm, EditDepartmentForm,
+    AnnouncementForm,
+)
 
 admin_bp = Blueprint('admin', __name__)
 
 
+# ── helpers ──────────────────────────────────────────────────────────────────
+def _dept_choices(include_blank=True):
+    depts = Department.query.order_by(Department.Name).all()
+    choices = [(d.DepartmentId, d.Name) for d in depts]
+    if include_blank:
+        choices.insert(0, (0, 'All Departments'))
+    return choices
+
+
+def _staff_choices(dept_id=None, include_blank=True):
+    q = User.query.filter_by(Role=RoleEnum.Staff, IsActive=True)
+    if dept_id:
+        q = q.filter_by(DepartmentId=dept_id)
+    staff = q.order_by(User.FullName).all()
+    choices = [(s.UserId, s.FullName) for s in staff]
+    if include_blank:
+        choices.insert(0, (0, 'All Staff'))
+    return choices
+
+
+def _open_count(staff_user):
+    return Ticket.query.filter(
+        Ticket.StaffId == staff_user.UserId,
+        ~Ticket.Status.in_([StatusEnum.Resolved, StatusEnum.Rejected])
+    ).count()
+
+
+# ─────────────────────────────────────────────
+#  1. OVERVIEW DASHBOARD
+# ─────────────────────────────────────────────
 @admin_bp.route('/dashboard')
 @login_required
 @role_required('Admin')
 def dashboard():
-    total_users = User.query.count()
+    # Top-level stats
+    total_users   = User.query.filter_by(IsActive=True).count()
     total_tickets = Ticket.query.count()
-    return render_template('admin/dashboard.html',
-                           total_users=total_users,
-                           total_tickets=total_tickets)
+    stats = {
+        'total_users'   : total_users,
+        'total_tickets' : total_tickets,
+        'submitted'     : Ticket.query.filter_by(Status=StatusEnum.Submitted).count(),
+        'assigned'      : Ticket.query.filter_by(Status=StatusEnum.Assigned).count(),
+        'in_progress'   : Ticket.query.filter_by(Status=StatusEnum.InProgress).count(),
+        'pending_info'  : Ticket.query.filter_by(Status=StatusEnum.PendingInfo).count(),
+        'resolved'      : Ticket.query.filter_by(Status=StatusEnum.Resolved).count(),
+        'rejected'      : Ticket.query.filter_by(Status=StatusEnum.Rejected).count(),
+    }
+
+    # Recent 10 tickets
+    recent_tickets = (Ticket.query
+                      .order_by(Ticket.CreatedAt.desc())
+                      .limit(10).all())
+
+    # Per-department breakdown
+    departments = Department.query.order_by(Department.Name).all()
+    dept_stats = []
+    for dept in departments:
+        all_t    = Ticket.query.filter_by(DepartmentId=dept.DepartmentId).all()
+        open_t   = [t for t in all_t
+                    if t.Status not in (StatusEnum.Resolved, StatusEnum.Rejected)]
+        dept_stats.append({
+            'dept'     : dept,
+            'total'    : len(all_t),
+            'open'     : len(open_t),
+            'resolved' : sum(1 for t in all_t if t.Status == StatusEnum.Resolved),
+        })
+
+    return render_template(
+        'admin/dashboard.html',
+        stats=stats,
+        recent_tickets=recent_tickets,
+        dept_stats=dept_stats,
+    )
+
+
+# ─────────────────────────────────────────────
+#  2. USER MANAGEMENT
+# ─────────────────────────────────────────────
+@admin_bp.route('/users')
+@login_required
+@role_required('Admin')
+def users():
+    filter_form = AdminUserFilterForm(request.args)
+    filter_form.department.choices = _dept_choices()
+
+    query = User.query
+
+    if filter_form.search.data:
+        s = f'%{filter_form.search.data}%'
+        query = query.filter(
+            (User.FullName.ilike(s)) | (User.Email.ilike(s))
+        )
+    if filter_form.role.data:
+        try:
+            query = query.filter(User.Role == RoleEnum(filter_form.role.data))
+        except ValueError:
+            pass
+    if filter_form.department.data and filter_form.department.data != 0:
+        query = query.filter(User.DepartmentId == filter_form.department.data)
+
+    users_list = query.order_by(User.FullName).all()
+
+    return render_template(
+        'admin/users.html',
+        users=users_list,
+        filter_form=filter_form,
+    )
+
+
+@admin_bp.route('/users/add', methods=['GET', 'POST'])
+@login_required
+@role_required('Admin')
+def add_user():
+    form = AddUserForm()
+    form.department.choices = [(0, '— None —')] + [
+        (d.DepartmentId, d.Name)
+        for d in Department.query.order_by(Department.Name).all()
+    ]
+
+    if form.validate_on_submit():
+        if User.query.filter_by(Email=form.email.data.strip().lower()).first():
+            flash('Email already registered.', 'danger')
+            return render_template('admin/user_form.html', form=form, edit=False)
+
+        user = User(
+            FullName     = form.full_name.data.strip(),
+            Email        = form.email.data.strip().lower(),
+            Role         = RoleEnum[form.role.data],
+            DepartmentId = form.department.data if form.department.data != 0 else None,
+            IsActive     = True,
+        )
+        user.set_password(form.password.data)
+        db.session.add(user)
+        db.session.commit()
+        flash(f'User {user.FullName} created successfully.', 'success')
+        return redirect(url_for('admin.users'))
+
+    return render_template('admin/user_form.html', form=form, edit=False)
+
+
+@admin_bp.route('/users/<int:user_id>/edit', methods=['GET', 'POST'])
+@login_required
+@role_required('Admin')
+def edit_user(user_id):
+    user = User.query.get_or_404(user_id)
+    form = EditUserForm(obj=user)
+    form.department.choices = [(0, '— None —')] + [
+        (d.DepartmentId, d.Name)
+        for d in Department.query.order_by(Department.Name).all()
+    ]
+
+    if request.method == 'GET':
+        form.full_name.data  = user.FullName
+        form.email.data      = user.Email
+        form.role.data       = user.Role.value
+        form.department.data = user.DepartmentId or 0
+
+    if form.validate_on_submit():
+        # Check email uniqueness (excluding this user)
+        existing = User.query.filter(
+            User.Email == form.email.data.strip().lower(),
+            User.UserId != user_id
+        ).first()
+        if existing:
+            flash('That email is already in use by another account.', 'danger')
+            return render_template('admin/user_form.html', form=form, edit=True, user=user)
+
+        user.FullName     = form.full_name.data.strip()
+        user.Email        = form.email.data.strip().lower()
+        user.Role         = RoleEnum[form.role.data]
+        user.DepartmentId = form.department.data if form.department.data != 0 else None
+        user.UpdatedAt    = datetime.utcnow()
+        db.session.commit()
+        flash('User updated successfully.', 'success')
+        return redirect(url_for('admin.users'))
+
+    return render_template('admin/user_form.html', form=form, edit=True, user=user)
+
+
+@admin_bp.route('/users/<int:user_id>/toggle', methods=['POST'])
+@login_required
+@role_required('Admin')
+def toggle_user(user_id):
+    user = User.query.get_or_404(user_id)
+
+    if user.UserId == current_user.UserId:
+        flash('You cannot deactivate your own account.', 'danger')
+        return redirect(url_for('admin.users'))
+
+    user.IsActive  = not user.IsActive
+    user.UpdatedAt = datetime.utcnow()
+    db.session.commit()
+
+    state = 'reactivated' if user.IsActive else 'deactivated'
+    flash(f'User {user.FullName} has been {state}.', 'success')
+    return redirect(url_for('admin.users'))
+
+
+@admin_bp.route('/users/<int:user_id>')
+@login_required
+@role_required('Admin')
+def user_detail(user_id):
+    user = User.query.get_or_404(user_id)
+
+    if user.Role == RoleEnum.Student:
+        tickets = user.submitted_tickets.order_by(Ticket.CreatedAt.desc()).all()
+    elif user.Role == RoleEnum.Staff:
+        tickets = user.assigned_tickets.order_by(Ticket.CreatedAt.desc()).all()
+    else:
+        tickets = []
+
+    return render_template('admin/user_detail.html', user=user, tickets=tickets)
+
+
+# ─────────────────────────────────────────────
+#  3. TICKET MANAGEMENT
+# ─────────────────────────────────────────────
+@admin_bp.route('/tickets')
+@login_required
+@role_required('Admin')
+def tickets():
+    filter_form = AdminTicketFilterForm(request.args)
+    filter_form.department.choices = _dept_choices()
+    filter_form.staff.choices      = _staff_choices()
+
+    query = Ticket.query
+
+    if filter_form.search.data:
+        s = f'%{filter_form.search.data}%'
+        query = query.filter(
+            (Ticket.Title.ilike(s)) |
+            (Ticket.TicketId == filter_form.search.data
+             if filter_form.search.data.isdigit() else False)
+        )
+    if filter_form.status.data:
+        try:
+            query = query.filter(Ticket.Status == StatusEnum(filter_form.status.data))
+        except ValueError:
+            pass
+    if filter_form.priority.data:
+        try:
+            query = query.filter(Ticket.Priority == PriorityEnum(filter_form.priority.data))
+        except ValueError:
+            pass
+    if filter_form.department.data and filter_form.department.data != 0:
+        query = query.filter(Ticket.DepartmentId == filter_form.department.data)
+    if filter_form.staff.data and filter_form.staff.data != 0:
+        query = query.filter(Ticket.StaffId == filter_form.staff.data)
+
+    tickets_list = query.order_by(Ticket.CreatedAt.desc()).all()
+
+    return render_template(
+        'admin/tickets.html',
+        tickets=tickets_list,
+        filter_form=filter_form,
+    )
+
+
+@admin_bp.route('/tickets/<int:ticket_id>')
+@login_required
+@role_required('Admin')
+def ticket_detail(ticket_id):
+    ticket      = Ticket.query.get_or_404(ticket_id)
+    updates     = (ticket.updates
+                   .filter_by(ParentUpdateId=None)
+                   .order_by(TicketUpdate.CreatedAt.asc())
+                   .all())
+    attachments = ticket.attachments.filter_by(UpdateId=None).all()
+
+    # Reassign form — staff in same department
+    reassign_form = ReassignTicketForm()
+    dept_staff    = (User.query
+                     .filter_by(Role=RoleEnum.Staff, IsActive=True,
+                                DepartmentId=ticket.DepartmentId)
+                     .order_by(User.FullName).all())
+    reassign_form.staff_id.choices = [
+        (s.UserId, f'{s.FullName} ({_open_count(s)} open)')
+        for s in dept_staff
+    ]
+
+    # Force status form
+    force_form = ForceStatusForm()
+
+    return render_template(
+        'admin/ticket_detail.html',
+        ticket=ticket,
+        updates=updates,
+        attachments=attachments,
+        reassign_form=reassign_form,
+        force_form=force_form,
+    )
+
+
+@admin_bp.route('/tickets/<int:ticket_id>/reassign', methods=['POST'])
+@login_required
+@role_required('Admin')
+def reassign_ticket(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    form   = ReassignTicketForm()
+
+    dept_staff = (User.query
+                  .filter_by(Role=RoleEnum.Staff, IsActive=True,
+                             DepartmentId=ticket.DepartmentId)
+                  .all())
+    form.staff_id.choices = [(s.UserId, s.FullName) for s in dept_staff]
+
+    if form.validate_on_submit():
+        new_staff = User.query.get_or_404(form.staff_id.data)
+        old_staff = ticket.staff
+
+        ticket.StaffId   = new_staff.UserId
+        ticket.Status    = StatusEnum.Assigned
+        ticket.UpdatedAt = datetime.utcnow()
+
+        db.session.add(TicketUpdate(
+            TicketId     = ticket.TicketId,
+            UserId       = current_user.UserId,
+            Comment      = (
+                f'[ADMIN] Ticket reassigned from '
+                f'{old_staff.FullName if old_staff else "Unassigned"} '
+                f'to {new_staff.FullName}.'
+            ),
+            StatusChange  = UpdateStatusEnum.Assigned,
+            IsReplyThread = False,
+        ))
+        db.session.commit()
+        flash(f'Ticket reassigned to {new_staff.FullName}.', 'success')
+    else:
+        flash('Reassignment failed — please select a staff member.', 'danger')
+
+    return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
+
+
+@admin_bp.route('/tickets/<int:ticket_id>/force-status', methods=['POST'])
+@login_required
+@role_required('Admin')
+def force_status(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    form   = ForceStatusForm()
+
+    if form.validate_on_submit():
+        try:
+            new_status = StatusEnum(form.status.data)
+        except ValueError:
+            flash('Invalid status.', 'danger')
+            return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
+
+        old_status     = ticket.Status
+        ticket.Status  = new_status
+        ticket.UpdatedAt = datetime.utcnow()
+
+        if new_status == StatusEnum.Resolved and not ticket.ResolvedAt:
+            ticket.ResolvedAt = datetime.utcnow()
+
+        try:
+            update_status = UpdateStatusEnum(form.status.data)
+        except ValueError:
+            update_status = None
+
+        db.session.add(TicketUpdate(
+            TicketId     = ticket.TicketId,
+            UserId       = current_user.UserId,
+            Comment      = f'[ADMIN OVERRIDE] {form.comment.data.strip()}',
+            StatusChange  = update_status,
+            IsReplyThread = False,
+        ))
+        db.session.commit()
+        flash(f'Ticket status changed to "{new_status.value}".', 'success')
+    else:
+        flash('Please fill in all required fields.', 'danger')
+
+    return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
+
+
+@admin_bp.route('/tickets/export')
+@login_required
+@role_required('Admin')
+def export_tickets():
+    tickets_list = Ticket.query.order_by(Ticket.CreatedAt.desc()).all()
+
+    def generate():
+        out = io.StringIO()
+        writer = csv.writer(out)
+        writer.writerow([
+            'ID', 'Title', 'Category', 'Priority', 'Status',
+            'Department', 'Student', 'Assigned Staff',
+            'Submitted', 'Resolved At', 'Feedback Rating'
+        ])
+        for t in tickets_list:
+            writer.writerow([
+                t.TicketId,
+                t.Title,
+                t.Category,
+                t.Priority.value,
+                t.Status.value,
+                t.department.Name if t.department else '',
+                t.student.FullName if t.student else '',
+                t.staff.FullName   if t.staff    else '',
+                t.CreatedAt.strftime('%Y-%m-%d %H:%M'),
+                t.ResolvedAt.strftime('%Y-%m-%d %H:%M') if t.ResolvedAt else '',
+                t.FeedbackRating or '',
+            ])
+            yield out.getvalue()
+            out.seek(0)
+            out.truncate(0)
+
+    headers = {
+        'Content-Disposition': 'attachment; filename=tickets_export.csv',
+        'Content-Type': 'text/csv',
+    }
+    return Response(generate(), headers=headers)
+
+
+# ─────────────────────────────────────────────
+#  4. DEPARTMENT MANAGEMENT
+# ─────────────────────────────────────────────
+@admin_bp.route('/departments')
+@login_required
+@role_required('Admin')
+def departments():
+    depts = Department.query.order_by(Department.Name).all()
+    dept_data = []
+    for dept in depts:
+        dept_data.append({
+            'dept'       : dept,
+            'staff_count': User.query.filter_by(
+                               Role=RoleEnum.Staff,
+                               DepartmentId=dept.DepartmentId,
+                               IsActive=True).count(),
+            'open_tickets': Ticket.query.filter(
+                               Ticket.DepartmentId == dept.DepartmentId,
+                               ~Ticket.Status.in_(
+                                   [StatusEnum.Resolved, StatusEnum.Rejected])
+                            ).count(),
+        })
+    add_form = AddDepartmentForm()
+    return render_template(
+        'admin/departments.html',
+        dept_data=dept_data,
+        add_form=add_form,
+    )
+
+
+@admin_bp.route('/departments/add', methods=['POST'])
+@login_required
+@role_required('Admin')
+def add_department():
+    form = AddDepartmentForm()
+    if form.validate_on_submit():
+        if Department.query.filter_by(Name=form.name.data.strip()).first():
+            flash('A department with that name already exists.', 'danger')
+        else:
+            db.session.add(Department(
+                Name        = form.name.data.strip(),
+                Description = form.description.data.strip() or None,
+            ))
+            db.session.commit()
+            flash('Department added.', 'success')
+    else:
+        flash('Please provide a valid department name.', 'danger')
+    return redirect(url_for('admin.departments'))
+
+
+@admin_bp.route('/departments/<int:dept_id>/edit', methods=['GET', 'POST'])
+@login_required
+@role_required('Admin')
+def edit_department(dept_id):
+    dept = Department.query.get_or_404(dept_id)
+    form = EditDepartmentForm(obj=dept)
+
+    if request.method == 'GET':
+        form.name.data        = dept.Name
+        form.description.data = dept.Description
+
+    if form.validate_on_submit():
+        conflict = Department.query.filter(
+            Department.Name == form.name.data.strip(),
+            Department.DepartmentId != dept_id
+        ).first()
+        if conflict:
+            flash('Another department already has that name.', 'danger')
+            return render_template('admin/dept_form.html', form=form, dept=dept)
+
+        dept.Name        = form.name.data.strip()
+        dept.Description = form.description.data.strip() or None
+        db.session.commit()
+        flash('Department updated.', 'success')
+        return redirect(url_for('admin.departments'))
+
+    return render_template('admin/dept_form.html', form=form, dept=dept)
+
+
+@admin_bp.route('/departments/<int:dept_id>')
+@login_required
+@role_required('Admin')
+def department_detail(dept_id):
+    dept        = Department.query.get_or_404(dept_id)
+    staff_list  = (User.query
+                   .filter_by(Role=RoleEnum.Staff, DepartmentId=dept_id)
+                   .order_by(User.FullName).all())
+    tickets     = (Ticket.query
+                   .filter_by(DepartmentId=dept_id)
+                   .order_by(Ticket.CreatedAt.desc())
+                   .all())
+    return render_template(
+        'admin/department_detail.html',
+        dept=dept,
+        staff_list=staff_list,
+        tickets=tickets,
+    )
+
+
+# ─────────────────────────────────────────────
+#  5. REPORTS
+# ─────────────────────────────────────────────
+@admin_bp.route('/reports')
+@login_required
+@role_required('Admin')
+def reports():
+    departments = Department.query.order_by(Department.Name).all()
+
+    # ── Tickets per month (last 12 months) ────────────────────────────────
+    from dateutil.relativedelta import relativedelta
+    today      = datetime.utcnow()
+    months     = []
+    month_data = []
+    for i in range(11, -1, -1):
+        start = (today - relativedelta(months=i)).replace(
+                    day=1, hour=0, minute=0, second=0, microsecond=0)
+        end   = (start + relativedelta(months=1))
+        count = Ticket.query.filter(
+            Ticket.CreatedAt >= start,
+            Ticket.CreatedAt <  end
+        ).count()
+        months.append(start.strftime('%b %Y'))
+        month_data.append(count)
+
+    # ── Resolution rate per department ─────────────────────────���──────────
+    dept_labels, dept_resolved, dept_unresolved = [], [], []
+    for dept in departments:
+        total    = Ticket.query.filter_by(DepartmentId=dept.DepartmentId).count()
+        resolved = Ticket.query.filter_by(
+            DepartmentId=dept.DepartmentId,
+            Status=StatusEnum.Resolved
+        ).count()
+        dept_labels.append(dept.Name)
+        dept_resolved.append(resolved)
+        dept_unresolved.append(total - resolved)
+
+    # ── Average resolution time per department (hours) ───────────────────
+    dept_avg_times = []
+    for dept in departments:
+        resolved_tickets = Ticket.query.filter(
+            Ticket.DepartmentId == dept.DepartmentId,
+            Ticket.Status       == StatusEnum.Resolved,
+            Ticket.ResolvedAt   != None  # noqa: E711
+        ).all()
+        if resolved_tickets:
+            avg = sum(
+                (t.ResolvedAt - t.CreatedAt).total_seconds()
+                for t in resolved_tickets
+            ) / len(resolved_tickets) / 3600
+            dept_avg_times.append(round(avg, 1))
+        else:
+            dept_avg_times.append(0)
+
+    # ── Top categories ────────────────────────────────────────────────────
+    from app.utils.helpers import TICKET_CATEGORIES
+    category_counts = [
+        Ticket.query.filter_by(Category=cat).count()
+        for cat in TICKET_CATEGORIES
+    ]
+
+    # ── Staff performance ─────────────────────────────────────────────────
+    staff_list = User.query.filter_by(Role=RoleEnum.Staff, IsActive=True).all()
+    staff_perf = []
+    for s in staff_list:
+        assigned = Ticket.query.filter_by(StaffId=s.UserId).count()
+        resolved_t = Ticket.query.filter(
+            Ticket.StaffId    == s.UserId,
+            Ticket.Status     == StatusEnum.Resolved,
+            Ticket.ResolvedAt != None  # noqa: E711
+        ).all()
+        avg_hrs = None
+        if resolved_t:
+            avg_hrs = round(
+                sum((t.ResolvedAt - t.CreatedAt).total_seconds()
+                    for t in resolved_t) / len(resolved_t) / 3600, 1
+            )
+        rated = [t for t in resolved_t if t.FeedbackRating]
+        avg_rating = (
+            round(sum(t.FeedbackRating for t in rated) / len(rated), 1)
+            if rated else None
+        )
+        staff_perf.append({
+            'staff'      : s,
+            'assigned'   : assigned,
+            'resolved'   : len(resolved_t),
+            'avg_hours'  : avg_hrs,
+            'avg_rating' : avg_rating,
+        })
+
+    return render_template(
+        'admin/reports.html',
+        months          = months,
+        month_data      = month_data,
+        dept_labels     = dept_labels,
+        dept_resolved   = dept_resolved,
+        dept_unresolved = dept_unresolved,
+        dept_avg_times  = dept_avg_times,
+        categories      = TICKET_CATEGORIES,
+        category_counts = category_counts,
+        staff_perf      = staff_perf,
+        departments     = departments,
+    )
+
+
+# ─────────────────────────────────────────────
+#  6. ANNOUNCEMENTS
+# ─────────────────────────────────────────────
+@admin_bp.route('/announcements', methods=['GET', 'POST'])
+@login_required
+@role_required('Admin')
+def announcements():
+    form = AnnouncementForm()
+    if form.validate_on_submit():
+        db.session.add(Announcement(
+            Title          = form.title.data.strip(),
+            Message        = form.message.data.strip(),
+            TargetAudience = form.audience.data,
+            CreatedBy      = current_user.UserId,
+            IsActive       = True,
+        ))
+        db.session.commit()
+        flash('Announcement posted.', 'success')
+        return redirect(url_for('admin.announcements'))
+
+    all_announcements = (Announcement.query
+                         .order_by(Announcement.CreatedAt.desc())
+                         .all())
+    return render_template(
+        'admin/announcements.html',
+        form=form,
+        announcements=all_announcements,
+    )
+
+
+@admin_bp.route('/announcements/<int:ann_id>/delete', methods=['POST'])
+@login_required
+@role_required('Admin')
+def delete_announcement(ann_id):
+    ann = Announcement.query.get_or_404(ann_id)
+    db.session.delete(ann)
+    db.session.commit()
+    flash('Announcement deleted.', 'info')
+    return redirect(url_for('admin.announcements'))

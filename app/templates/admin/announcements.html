@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Announcements — Admin{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0"><i class="bi bi-megaphone me-2 text-primary"></i>Announcements</h3>
+</div>
+
+<div class="row g-4">
+  <!-- Create Form -->
+  <div class="col-lg-5">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header bg-primary text-white fw-semibold">
+        <i class="bi bi-plus-circle me-1"></i>New Announcement
+      </div>
+      <div class="card-body">
+        <form method="POST" novalidate>
+          {{ form.hidden_tag() }}
+          <div class="mb-3">
+            {{ form.title.label(class="form-label fw-semibold") }}
+            {{ form.title(class="form-control" + (" is-invalid" if form.title.errors else "")) }}
+            {% for e in form.title.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="mb-3">
+            {{ form.message.label(class="form-label fw-semibold") }}
+            {{ form.message(class="form-control" + (" is-invalid" if form.message.errors else "")) }}
+            {% for e in form.message.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+          </div>
+          <div class="mb-4">
+            {{ form.audience.label(class="form-label fw-semibold") }}
+            {{ form.audience(class="form-select") }}
+          </div>
+          {{ form.submit(class="btn btn-primary w-100") }}
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Existing Announcements -->
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-list-ul me-1"></i>Posted Announcements
+      </div>
+      {% if announcements %}
+        <ul class="list-group list-group-flush">
+          {% for ann in announcements %}
+          <li class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start">
+              <div class="flex-grow-1">
+                <div class="fw-semibold">{{ ann.Title }}</div>
+                <p class="small text-muted mb-1">{{ ann.Message }}</p>
+                <div class="d-flex gap-2 align-items-center">
+                  {% if ann.TargetAudience == 'All' %}
+                    <span class="badge bg-primary">All Users</span>
+                  {% elif ann.TargetAudience == 'Student' %}
+                    <span class="badge bg-secondary">Students</span>
+                  {% else %}
+                    <span class="badge bg-info text-dark">Staff</span>
+                  {% endif %}
+                  <span class="text-muted" style="font-size:0.75rem;">
+                    {{ ann.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                  </span>
+                </div>
+              </div>
+              <form method="POST"
+                    action="{{ url_for('admin.delete_announcement', ann_id=ann.AnnouncementId) }}"
+                    class="ms-3">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-sm btn-outline-danger"
+                        onclick="return confirm('Delete this announcement?')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </form>
+            </div>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="card-body text-center text-muted py-4">
+          <i class="bi bi-megaphone display-5 d-block mb-2"></i>
+          No announcements yet.
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

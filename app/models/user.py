@@ -19,6 +19,7 @@ class User(UserMixin, db.Model):
     Email        = db.Column(db.String(150), unique=True, nullable=False)
     PasswordHash = db.Column(db.String(256), nullable=False)
     Role         = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.Student)
+    IsActive     = db.Column(db.Boolean, default=True, nullable=False)
 
     DepartmentId = db.Column(
         db.Integer,
@@ -29,7 +30,6 @@ class User(UserMixin, db.Model):
     CreatedAt = db.Column(db.DateTime, default=datetime.utcnow)
     UpdatedAt = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    # Relationships
     submitted_tickets = db.relationship(
         'Ticket', foreign_keys='Ticket.StudentId',
         backref='student', lazy='dynamic'
@@ -48,6 +48,11 @@ class User(UserMixin, db.Model):
 
     def check_password(self, password):
         return check_password_hash(self.PasswordHash, password)
+
+    # Flask-Login — deactivated users cannot log in
+    @property
+    def is_active(self):
+        return self.IsActive
 
     def __repr__(self):
         return f'<User {self.Email} [{self.Role.value}]>'
