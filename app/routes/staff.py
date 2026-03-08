@@ -19,8 +19,12 @@ from app.forms.staff_forms import (
     EscalationRequestForm, StaffTicketFilterForm
 )
 
+
+# Blueprint for staff-related routes
 staff_bp = Blueprint('staff', __name__)
 
+
+# Maps form status strings to their corresponding enums for ticket and update
 _STATUS_MAP = {
     'In Progress': (StatusEnum.InProgress, UpdateStatusEnum.InProgress),
     'Rejected'   : (StatusEnum.Rejected,   UpdateStatusEnum.Rejected),
@@ -28,13 +32,16 @@ _STATUS_MAP = {
 
 
 # ── DASHBOARD ────────────────────────────────────────────────────────────────
+
+# Staff dashboard: shows tickets assigned to the current staff member, with filters and stats
 @staff_bp.route('/dashboard')
 @login_required
 @role_required('Staff')
 def dashboard():
-    filter_form = StaffTicketFilterForm(request.args)
-    query = Ticket.query.filter_by(StaffId=current_user.UserId)
+    filter_form = StaffTicketFilterForm(request.args)  # Form for filtering tickets
+    query = Ticket.query.filter_by(StaffId=current_user.UserId)  # Only tickets assigned to this staff
 
+    # Apply filters if present
     if filter_form.status.data:
         try:
             query = query.filter(Ticket.Status == StatusEnum(filter_form.status.data))
@@ -48,9 +55,10 @@ def dashboard():
     if filter_form.category.data:
         query = query.filter(Ticket.Category == filter_form.category.data)
 
-    tickets = query.order_by(Ticket.UpdatedAt.desc()).all()
-    all_assigned = Ticket.query.filter_by(StaffId=current_user.UserId).all()
+    tickets = query.order_by(Ticket.UpdatedAt.desc()).all()  # Filtered and sorted tickets
+    all_assigned = Ticket.query.filter_by(StaffId=current_user.UserId).all()  # All assigned tickets
 
+    # Find resolved tickets and calculate average resolution time
     resolved_tickets = [
         t for t in all_assigned
         if t.Status == StatusEnum.Resolved and t.ResolvedAt
@@ -63,6 +71,7 @@ def dashboard():
         )
         avg_resolution_hours = round(total_secs / len(resolved_tickets) / 3600, 1)
 
+    # Build stats for dashboard display
     stats = {
         'total'        : len(all_assigned),
         'in_progress'  : sum(1 for t in all_assigned if t.Status == StatusEnum.InProgress),
@@ -76,6 +85,7 @@ def dashboard():
         'avg_hours': avg_resolution_hours,
     }
 
+    # Render the dashboard template with tickets and stats
     return render_template(
         'staff/dashboard.html',
         tickets=tickets,
@@ -85,17 +95,22 @@ def dashboard():
 
 
 # ── VIEW TICKET ───────────────────────────────────────────────────────────────
+
+# View details of a specific ticket assigned to staff
 @staff_bp.route('/ticket/<int:ticket_id>')
 @login_required
 @role_required('Staff')
 def view_ticket(ticket_id):
-    ticket = _get_staff_ticket(ticket_id)
+    ticket = _get_staff_ticket(ticket_id)  # Ensure staff owns this ticket
+    # Get all top-level updates (not replies)
     updates = (ticket.updates
                .filter_by(ParentUpdateId=None)
                .order_by(TicketUpdate.CreatedAt.asc())
                .all())
+    # Get attachments not linked to updates
     attachments = ticket.attachments.filter_by(UpdateId=None).all()
 
+    # Forms for various staff actions
     update_form       = UpdateTicketForm()
     resolve_form      = ResolveTicketForm()
     reply_form        = ReplyForm()
@@ -110,11 +125,12 @@ def view_ticket(ticket_id):
         (d.DepartmentId, d.Name) for d in other_depts
     ]
 
-    # Pending escalation for this ticket (if any)
+    # Check if there is a pending escalation for this ticket
     pending_escalation = EscalationRequest.query.filter_by(
         TicketId=ticket_id, Status='Pending'
     ).first()
 
+    # Render the ticket view template with all forms and data
     return render_template(
         'staff/view_ticket.html',
         ticket=ticket,
@@ -130,14 +146,17 @@ def view_ticket(ticket_id):
 
 
 # ── UPDATE STATUS ─────────────────────────────────────────────────────────────
+
+# Update the status of a ticket (e.g., In Progress, Rejected)
 @staff_bp.route('/ticket/<int:ticket_id>/update', methods=['POST'])
 @login_required
 @role_required('Staff')
 def update_ticket(ticket_id):
-    ticket = _get_staff_ticket(ticket_id)
+    ticket = _get_staff_ticket(ticket_id)  # Ensure staff owns this ticket
     form   = UpdateTicketForm()
 
     if form.validate_on_submit():
+        # Map form status to enums
         mapping = _STATUS_MAP.get(form.status.data)
         if not mapping:
             flash('Invalid status selected.', 'danger')
@@ -147,6 +166,7 @@ def update_ticket(ticket_id):
         ticket.Status    = new_status
         ticket.UpdatedAt = datetime.utcnow()
 
+        # Log the status update in the ticket's timeline
         db.session.add(TicketUpdate(
             TicketId      = ticket.TicketId,
             UserId        = current_user.UserId,
@@ -159,15 +179,18 @@ def update_ticket(ticket_id):
     else:
         flash('Please fill in all required fields.', 'danger')
 
+    # Redirect back to the ticket view
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
 # ── RESOLVE ───────────────────────────────────────────────────────────────────
+
+# Mark a ticket as resolved and log the resolution
 @staff_bp.route('/ticket/<int:ticket_id>/resolve', methods=['POST'])
 @login_required
 @role_required('Staff')
 def resolve_ticket(ticket_id):
-    ticket = _get_staff_ticket(ticket_id)
+    ticket = _get_staff_ticket(ticket_id)  # Ensure staff owns this ticket
     form   = ResolveTicketForm()
 
     if form.validate_on_submit():
@@ -175,6 +198,7 @@ def resolve_ticket(ticket_id):
         ticket.ResolvedAt = datetime.utcnow()
         ticket.UpdatedAt  = datetime.utcnow()
 
+        # Add a timeline update marking the ticket as resolved
         db.session.add(TicketUpdate(
             TicketId      = ticket.TicketId,
             UserId        = current_user.UserId,
@@ -187,21 +211,25 @@ def resolve_ticket(ticket_id):
     else:
         flash('Please provide resolution details.', 'danger')
 
+    # Redirect back to the ticket view
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
 # ── REPLY TO STUDENT (sets Pending Info) ──────────────────────────────────────
+
+# Reply to a student, setting the ticket status to Pending Info
 @staff_bp.route('/ticket/<int:ticket_id>/reply', methods=['POST'])
 @login_required
 @role_required('Staff')
 def reply_ticket(ticket_id):
-    ticket = _get_staff_ticket(ticket_id)
+    ticket = _get_staff_ticket(ticket_id)  # Ensure staff owns this ticket
     form   = ReplyForm()
 
     if form.validate_on_submit():
         ticket.Status    = StatusEnum.PendingInfo
         ticket.UpdatedAt = datetime.utcnow()
 
+        # Add a reply update and set as a reply thread
         update = TicketUpdate(
             TicketId      = ticket.TicketId,
             UserId        = current_user.UserId,
@@ -215,17 +243,21 @@ def reply_ticket(ticket_id):
     else:
         flash('Message cannot be empty.', 'danger')
 
+    # Redirect back to the ticket view
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
 # ── STAFF THREAD REPLY ────────────────────────────────────────────────────────
+
+# Reply to a specific thread in a ticket (internal staff discussion)
 @staff_bp.route('/ticket/<int:ticket_id>/thread-reply/<int:update_id>', methods=['POST'])
 @login_required
 @role_required('Staff')
 def thread_reply(ticket_id, update_id):
-    ticket = _get_staff_ticket(ticket_id)
-    parent = TicketUpdate.query.get_or_404(update_id)
+    ticket = _get_staff_ticket(ticket_id)  # Ensure staff owns this ticket
+    parent = TicketUpdate.query.get_or_404(update_id)  # Parent update to reply to
 
+    # Only allow replies to valid reply threads
     if parent.TicketId != ticket_id:
         abort(403)
     if not parent.IsReplyThread:
@@ -234,6 +266,7 @@ def thread_reply(ticket_id, update_id):
 
     form = StaffThreadReplyForm()
     if form.validate_on_submit():
+        # Add a reply to the thread
         reply = TicketUpdate(
             TicketId       = ticket_id,
             UserId         = current_user.UserId,
@@ -248,17 +281,21 @@ def thread_reply(ticket_id, update_id):
     else:
         flash('Reply cannot be empty.', 'danger')
 
+    # Redirect back to the ticket view
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
 # ── REQUEST ESCALATION ────────────────────────────────────────────────────────
+
+# Request escalation of a ticket to another department
 @staff_bp.route('/ticket/<int:ticket_id>/escalate', methods=['POST'])
 @login_required
 @role_required('Staff')
 def request_escalation(ticket_id):
-    ticket = _get_staff_ticket(ticket_id)
+    ticket = _get_staff_ticket(ticket_id)  # Ensure staff owns this ticket
     form   = EscalationRequestForm()
 
+    # List all departments except the current one for escalation
     other_depts = Department.query.filter(
         Department.DepartmentId != ticket.DepartmentId
     ).all()
@@ -275,6 +312,7 @@ def request_escalation(ticket_id):
 
         target_dept = Department.query.get_or_404(form.target_dept.data)
 
+        # Create the escalation request
         escalation = EscalationRequest(
             TicketId      = ticket_id,
             RequestedById = current_user.UserId,
@@ -284,7 +322,7 @@ def request_escalation(ticket_id):
         )
         db.session.add(escalation)
 
-        # Log on timeline
+        # Log the escalation request in the ticket's timeline
         db.session.add(TicketUpdate(
             TicketId      = ticket_id,
             UserId        = current_user.UserId,
@@ -295,7 +333,7 @@ def request_escalation(ticket_id):
             IsReplyThread = False,
         ))
 
-        # Notify admin
+        # Notify admin of the escalation request
         db.session.add(AdminNotification(
             Type     = 'escalation_request',
             Message  = (
@@ -312,10 +350,13 @@ def request_escalation(ticket_id):
     else:
         flash('Please fill in all escalation fields.', 'danger')
 
+    # Redirect back to the ticket view
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
 # ── HELPER ────────────────────────────────────────────────────────────────────
+
+# Helper function to fetch a ticket and ensure it belongs to the current staff user
 def _get_staff_ticket(ticket_id: int) -> Ticket:
     ticket = Ticket.query.get_or_404(ticket_id)
     if ticket.StaffId != current_user.UserId:
