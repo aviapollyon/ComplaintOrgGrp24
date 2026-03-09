@@ -233,6 +233,7 @@
     {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
 
     <!-- Pending Escalation Notice -->
+  <!--
     {% if pending_escalation %}
     <div class="alert alert-warning d-flex gap-2 align-items-start">
       <i class="bi bi-arrow-up-right-circle-fill mt-1"></i>
@@ -245,7 +246,7 @@
       </div>
     </div>
     {% endif %}
-
+  -->
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-header bg-primary text-white fw-semibold">
         <i class="bi bi-arrow-repeat me-1"></i>Update Status
@@ -305,6 +306,7 @@
     </div>
 
     <!-- Escalation Request Panel -->
+  <!--
     {% if not pending_escalation %}
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-header bg-secondary text-white fw-semibold">
@@ -331,6 +333,7 @@
       </div>
     </div>
     {% endif %}
+  -->
 
     {% else %}
     <div class="card border-0 shadow-sm">

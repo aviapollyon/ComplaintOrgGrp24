@@ -21,9 +21,10 @@ from app.utils.helpers import (
 )
 from app.forms.student_forms import (
     SubmitTicketForm, EditTicketForm, FeedbackForm,
-    TicketFilterForm, StudentReplyForm
+    TicketFilterForm, StudentReplyForm 
 )
 from app.services.assignment import auto_assign_ticket
+from app.services.notifications import notify_student_replied
 
 # Blueprint mapping isolating routing specifically related directly to the regular Student user role boundaries
 student_bp = Blueprint('student', __name__)
@@ -32,7 +33,6 @@ student_bp = Blueprint('student', __name__)
 # ─────────────────────────────────────────────
 #  FILE SERVING  (works for both ticket & update attachments)
 # ─────────────────────────────────────────────
-# Authenticated system-internal routing path retrieving media artifacts specifically without exposing direct URL access
 @student_bp.route('/uploads/<path:filepath>')
 @login_required
 def serve_upload(filepath):
@@ -242,23 +242,18 @@ def view_ticket(ticket_id):
 @role_required('Student')
 def reply_to_update(ticket_id, update_id):
     ticket = Ticket.query.get_or_404(ticket_id)
-    # Implement strict boundary validation mapping specific security limitations rejecting unauthorized access
     if ticket.StudentId != current_user.UserId:
         abort(403)
 
-    # Look explicitly linking up precisely defined chronologies mapping exactly against existing threads
     parent_update = TicketUpdate.query.get_or_404(update_id)
     if parent_update.TicketId != ticket_id:
         abort(403)
-
-    # ── Server-side gate: explicitly restricts user interactions explicitly to instances mapped with boolean truth flags ──
     if not parent_update.IsReplyThread:
         flash('Replies are only allowed on designated reply threads.', 'warning')
         return redirect(url_for('student.view_ticket', ticket_id=ticket_id))
 
     form = StudentReplyForm()
     if form.validate_on_submit():
-        # Inject standard relation definitions binding specific ID values connecting hierarchical mappings directly 
         reply = TicketUpdate(
             TicketId       = ticket_id,
             UserId         = current_user.UserId,
@@ -267,30 +262,24 @@ def reply_to_update(ticket_id, update_id):
             IsReplyThread  = False,
         )
         db.session.add(reply)
-        # Flush captures internal unique ID creation enabling reliable directory mappings immediately afterwards
         db.session.flush()
 
-        # Handle iteration iterating multiple files dynamically mapping explicit target nested sub-folders corresponding directly to Update IDs
         for file in request.files.getlist('attachments'):
-            # Validate presence explicitly guaranteeing valid structures passed through the library utility functions
             if file and file.filename and allowed_file(file.filename):
                 upload_root = current_app.config['UPLOAD_FOLDER']
-                # Subdivide file hierarchies physically organizing payloads out cleanly separated directly aligning with specific update logs
                 update_dir  = os.path.join(upload_root, f'update_{reply.UpdateId}')
                 os.makedirs(update_dir, exist_ok=True)
-                
                 from werkzeug.utils import secure_filename
                 filename = secure_filename(file.filename)
                 filepath = os.path.join(update_dir, filename)
-                
-                # Exfiltrate data physically down out of the temporary processing layer explicitly flushing into hard disk sectors 
                 file.save(filepath)
-                # Map SQL entity connecting relationships identically out directly linking update chunks
                 db.session.add(Attachment(
                     UpdateId=reply.UpdateId, FileName=filename, FilePath=filepath
                 ))
 
-        # Set explicitly last modifying tracking data universally checking latest input dates 
+        # Notify assigned staff
+        notify_student_replied(ticket, current_user)
+
         ticket.UpdatedAt = datetime.utcnow()
         db.session.commit()
         flash('Reply sent.', 'success')
@@ -298,7 +287,6 @@ def reply_to_update(ticket_id, update_id):
         flash('Reply cannot be empty.', 'danger')
 
     return redirect(url_for('student.view_ticket', ticket_id=ticket_id))
-
 
 # ─────────────────────────────────────────────
 #  EDIT TICKET

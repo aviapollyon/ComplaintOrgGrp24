@@ -35,6 +35,7 @@ class TicketUpdate(db.Model):
     # These are the ONLY comments that get a reply thread box.
     IsReplyThread = db.Column(db.Boolean, default=False, nullable=False)
 
+    # Allows updates to be linked together in a parent-child relationship
     ParentUpdateId = db.Column(
         db.Integer,
         db.ForeignKey('ticket_updates.UpdateId', name='fk_ticket_updates_parent_id'),

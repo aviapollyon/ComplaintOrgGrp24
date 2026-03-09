@@ -344,34 +344,36 @@ def tickets():
     tickets_list = query.order_by(Ticket.CreatedAt.desc()).all()
     return render_template('admin/tickets.html', tickets=tickets_list, filter_form=filter_form)
 
-
 @admin_bp.route('/tickets/<int:ticket_id>')
 @login_required
 @role_required('Admin')
 def ticket_detail(ticket_id):
-    ticket      = Ticket.query.get_or_404(ticket_id)
+    ticket = Ticket.query.get_or_404(ticket_id)
+
+    # Auto-dismiss admin notifications for this ticket
+    AdminNotification.query.filter_by(
+        TicketId=ticket_id, IsRead=False
+    ).update({'IsRead': True})
+    db.session.commit()
+
+
     updates     = (ticket.updates
                    .filter_by(ParentUpdateId=None)
                    .order_by(TicketUpdate.CreatedAt.asc())
                    .all())
     attachments = ticket.attachments.filter_by(UpdateId=None).all()
 
-    # Reassign form: Setup to assign ticket to a different staff member in the same department
     reassign_form = ReassignTicketForm()
     reassign_form.staff_id.choices = _staff_choices_for_dept(ticket.DepartmentId)
 
-    # Force status form: Admin-only override for a ticket's status 
     force_form = ForceStatusForm()
 
-    # Check for any pending escalation for this ticket
     pending_escalation = EscalationRequest.query.filter_by(
         TicketId=ticket_id, Status='Pending'
     ).first()
 
-    # Escalation review form: Appears only if there's a pending escalation
     escalation_form = EscalationReviewForm() if pending_escalation else None
     if escalation_form and pending_escalation:
-        # Populate staff choices based on the targeted escalation department
         escalation_form.staff_id.choices = _staff_choices_for_dept(
             pending_escalation.TargetDeptId
         )

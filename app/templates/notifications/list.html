@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}My Notifications{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0"><i class="bi bi-bell me-2 text-primary"></i>My Notifications</h3>
+  <span class="text-muted small">All marked as read on page open</span>
+</div>
+
+{% if notifications %}
+<div class="card border-0 shadow-sm">
+  <ul class="list-group list-group-flush">
+    {% for n in notifications %}
+    <li class="list-group-item {{ 'bg-light' if not n.IsRead else '' }}">
+      <div class="d-flex gap-3 align-items-start">
+        <div class="mt-1 flex-shrink-0">
+          {% if n.Type == 'ticket_assigned' %}
+            <i class="bi bi-person-check-fill text-primary fs-5"></i>
+          {% elif n.Type == 'new_reply' %}
+            <i class="bi bi-chat-left-dots-fill text-warning fs-5"></i>
+          {% elif n.Type == 'reply_received' %}
+            <i class="bi bi-reply-fill text-info fs-5"></i>
+          {% elif n.Type == 'ticket_resolved' %}
+            <i class="bi bi-check-circle-fill text-success fs-5"></i>
+          {% elif n.Type == 'ticket_rejected' %}
+            <i class="bi bi-x-circle-fill text-danger fs-5"></i>
+          {% elif n.Type == 'ticket_reopened' %}
+            <i class="bi bi-arrow-counterclockwise text-warning fs-5"></i>
+          {% else %}
+            <i class="bi bi-info-circle-fill text-secondary fs-5"></i>
+          {% endif %}
+        </div>
+        <div class="flex-grow-1">
+          <div class="fw-semibold small">{{ n.Title }}</div>
+          <p class="mb-1 small text-muted">{{ n.Message }}</p>
+          <div class="d-flex align-items-center gap-3">
+            <span class="text-muted" style="font-size:0.75rem;">
+              {{ n.CreatedAt.strftime('%d %b %Y %H:%M') }}
+            </span>
+            {% if n.TicketId %}
+              {% if current_user.Role.value == 'Student' %}
+                <a href="{{ url_for('student.view_ticket', ticket_id=n.TicketId) }}"
+                   class="btn btn-sm btn-outline-primary py-0 px-2">
+                  View Ticket #{{ n.TicketId }}
+                </a>
+              {% elif current_user.Role.value == 'Staff' %}
+                <a href="{{ url_for('staff.view_ticket', ticket_id=n.TicketId) }}"
+                   class="btn btn-sm btn-outline-primary py-0 px-2">
+                  View Ticket #{{ n.TicketId }}
+                </a>
+              {% elif current_user.Role.value == 'Admin' %}
+                <a href="{{ url_for('admin.ticket_detail', ticket_id=n.TicketId) }}"
+                   class="btn btn-sm btn-outline-primary py-0 px-2">
+                  View Ticket #{{ n.TicketId }}
+                </a>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+        {% if not n.IsRead %}
+          <span class="badge bg-warning text-dark flex-shrink-0">New</span>
+        {% endif %}
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-bell-slash display-4 d-block mb-3"></i>
+  No notifications yet.
+</div>
+{% endif %}
+{% endblock %}

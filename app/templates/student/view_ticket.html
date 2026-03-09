@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/status_badge.html" import status_badge, update_status_badge %}
 {% block title %}Ticket #{{ ticket.TicketId }} — DUT Grievance Portal{% endblock %}
 
 {% block content %}
@@ -17,14 +18,7 @@
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ ticket.Title }}</h5>
-        {% set s = ticket.Status.value %}
-        {% if s == 'Submitted' %}       <span class="badge bg-secondary fs-6">Submitted</span>
-        {% elif s == 'Assigned' %}      <span class="badge bg-primary fs-6">Assigned</span>
-        {% elif s == 'In Progress' %}   <span class="badge bg-info text-dark fs-6">In Progress</span>
-        {% elif s == 'Pending Info' %}  <span class="badge bg-warning text-dark fs-6"><i class="bi bi-question-circle me-1"></i>Pending Info</span>
-        {% elif s == 'Resolved' %}      <span class="badge bg-success fs-6">Resolved</span>
-        {% elif s == 'Rejected' %}      <span class="badge bg-danger fs-6">Rejected</span>
-        {% endif %}
+        {{ status_badge(ticket.Status.value) }}
       </div>
       <div class="card-body">
         <p class="text-muted">{{ ticket.Description }}</p>
@@ -122,9 +116,10 @@
         {% if updates %}
           {% for update in updates %}
             {% set is_staff  = update.author.Role.value == 'Staff' %}
-            {% set is_system = (update.StatusChange is not none and not is_staff) %}
+            {% set is_admin  = update.author.Role.value == 'Admin' %}
+            {% set is_system = (update.StatusChange is not none and not is_staff and not is_admin) %}
 
-            {# ── System log line ── #}
+            {# ── System log ── #}
             {% if is_system %}
             <div class="d-flex gap-2 mb-3 align-items-start">
               <div class="text-secondary mt-1">
@@ -133,12 +128,35 @@
               <div class="flex-grow-1">
                 <span class="small text-muted">{{ update.Comment }}</span>
                 {% if update.StatusChange %}
-                  <span class="badge bg-primary bg-opacity-10 text-primary border border-primary ms-2">
-                    → {{ update.StatusChange.value }}
-                  </span>
+                  {{ update_status_badge(update.StatusChange.value) }}
                 {% endif %}
                 <div class="text-muted" style="font-size:0.72rem;">
                   {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                </div>
+              </div>
+            </div>
+
+            {# ── Admin comment ── #}
+            {% elif is_admin %}
+            <div class="d-flex gap-2 mb-3 align-items-start">
+              <div class="rounded-circle bg-danger text-white d-flex align-items-center
+                          justify-content-center flex-shrink-0"
+                   style="width:36px;height:36px;font-size:0.8rem;">A</div>
+              <div class="flex-grow-1">
+                <div class="bg-danger bg-opacity-10 border border-danger rounded p-3">
+                  <div class="d-flex justify-content-between mb-1">
+                    <span class="fw-semibold small text-danger">
+                      {{ update.author.FullName }}
+                      <span class="badge bg-danger ms-1" style="font-size:0.65rem;">Admin</span>
+                    </span>
+                    <span class="text-muted" style="font-size:0.75rem;">
+                      {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
+                    </span>
+                  </div>
+                  <p class="mb-1 small">{{ update.Comment }}</p>
+                  {% if update.StatusChange %}
+                    {{ update_status_badge(update.StatusChange.value) }}
+                  {% endif %}
                 </div>
               </div>
             </div>
@@ -171,22 +189,17 @@
                     </div>
                     <p class="mb-2 small">{{ update.Comment }}</p>
                     {% if update.StatusChange %}
-                      <span class="badge bg-warning text-dark border border-warning">
-                        <i class="bi bi-question-circle me-1"></i>{{ update.StatusChange.value }}
-                      </span>
+                      {{ update_status_badge(update.StatusChange.value) }}
                     {% endif %}
                   </div>
 
-                  {# ────────────────────────────────────────────────────────────
-                     GATE: only IsReplyThread comments get replies + reply box
-                  ──────────────────────────────────────────────────────────── #}
+                  {# ── Only IsReplyThread comments get reply boxes ── #}
                   {% if update.IsReplyThread %}
 
-                    {# Existing replies in this thread #}
                     {% for reply in update.replies.all() %}
                     <div class="d-flex gap-2 mt-2 ms-4">
                       <div class="rounded-circle
-                                  {% if reply.author.Role.value == 'Staff' %}bg-primary{% else %}bg-secondary{% endif %}
+                                  {{ 'bg-primary' if reply.author.Role.value == 'Staff' else 'bg-secondary' }}
                                   text-white d-flex align-items-center justify-content-center flex-shrink-0"
                            style="width:30px;height:30px;font-size:0.75rem;">
                         {{ reply.author.FullName[0].upper() }}
@@ -197,7 +210,7 @@
                             <span class="fw-semibold small">
                               {{ reply.author.FullName }}
                               <span class="badge
-                                {% if reply.author.Role.value == 'Staff' %}bg-primary{% else %}bg-secondary{% endif %}
+                                {{ 'bg-primary' if reply.author.Role.value == 'Staff' else 'bg-secondary' }}
                                 ms-1" style="font-size:0.65rem;">
                                 {{ reply.author.Role.value }}
                               </span>
@@ -207,7 +220,6 @@
                             </span>
                           </div>
                           <p class="mb-1 small">{{ reply.Comment }}</p>
-                          {# Reply attachments #}
                           {% for ra in reply.attachments.all() %}
                             {% set ext = ra.FileName.rsplit('.', 1)[-1].lower() %}
                             {% if ext in ['png', 'jpg', 'jpeg'] %}
@@ -228,7 +240,6 @@
                     </div>
                     {% endfor %}
 
-                    {# Student reply box — only for IsReplyThread + ticket not closed #}
                     {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
                     <div class="ms-4 mt-2">
                       <form method="POST"
@@ -257,13 +268,13 @@
                     </div>
                     {% endif %}
 
-                  {% endif %}{# end IsReplyThread gate #}
+                  {% endif %}{# end IsReplyThread #}
 
                 </div>
               </div>
             </div>
 
-            {# ── Student's own top-level log entries ── #}
+            {# ── Student top-level log ── #}
             {% else %}
             <div class="d-flex gap-2 mb-3 align-items-start justify-content-end">
               <div class="flex-grow-1 text-end">
@@ -295,15 +306,14 @@
 
   </div><!-- /col-lg-8 -->
 
-  <!-- RIGHT: Pending Info alert + Feedback -->
+  <!-- RIGHT -->
   <div class="col-lg-4">
 
     {% if ticket.Status.value == 'Pending Info' %}
     <div class="alert alert-warning">
       <i class="bi bi-question-circle-fill me-2"></i>
       <strong>More information needed.</strong><br>
-      <span class="small">Staff has requested clarification.
-        Please reply to the <strong>Reply Thread</strong> message above.</span>
+      <span class="small">Please reply to the <strong>Reply Thread</strong> message above.</span>
     </div>
     {% endif %}
 
@@ -361,7 +371,6 @@
     {% endif %}
 
   </div>
-
 </div>
 
 <!-- Withdraw Modal -->
@@ -393,7 +402,6 @@
 
 {% block extra_scripts %}
 <script>
-// Star rating
 const stars = document.querySelectorAll('.star-btn');
 const ratingInput = document.getElementById('ratingInput');
 if (stars.length) {

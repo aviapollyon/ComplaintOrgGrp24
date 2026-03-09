@@ -15,11 +15,15 @@ def _open_ticket_count(staff_user: User) -> int:
 def auto_assign_ticket(ticket: Ticket) -> User | None:
     from app import db
     from app.models.admin_notification import AdminNotification
+    from app.services.notifications import notify_ticket_assigned
 
     if ticket.DepartmentId is None:
-        _notify_admin(ticket, 'unassigned_ticket',
-                      f'Ticket #{ticket.TicketId} "{ticket.Title}" could not be '
-                      f'auto-assigned — no department mapped.')
+        db.session.add(AdminNotification(
+            Type='unassigned_ticket',
+            Message=(f'Ticket #{ticket.TicketId} "{ticket.Title}" could not be '
+                     f'auto-assigned — no department mapped.'),
+            TicketId=ticket.TicketId, IsRead=False,
+        ))
         return None
 
     dept_staff: list[User] = User.query.filter_by(
@@ -29,33 +33,22 @@ def auto_assign_ticket(ticket: Ticket) -> User | None:
     ).all()
 
     if not dept_staff:
-        _notify_admin(ticket, 'unassigned_ticket',
-                      f'Ticket #{ticket.TicketId} "{ticket.Title}" has no staff '
-                      f'in its department and was left unassigned.')
+        db.session.add(AdminNotification(
+            Type='unassigned_ticket',
+            Message=(f'Ticket #{ticket.TicketId} "{ticket.Title}" has no staff '
+                     f'in its department and was left unassigned.'),
+            TicketId=ticket.TicketId, IsRead=False,
+        ))
         return None
 
-    staff_with_load = [
-        (member, _open_ticket_count(member))
-        for member in dept_staff
-    ]
-    available = [(m, load) for m, load in staff_with_load if load < ASSIGNMENT_LIMIT]
-
-    if available:
-        chosen, _ = min(available, key=lambda x: x[1])
-    else:
-        chosen = random.choice(dept_staff)
+    staff_with_load = [(m, _open_ticket_count(m)) for m in dept_staff]
+    available       = [(m, l) for m, l in staff_with_load if l < ASSIGNMENT_LIMIT]
+    chosen          = min(available, key=lambda x: x[1])[0] if available else random.choice(dept_staff)
 
     ticket.StaffId = chosen.UserId
     ticket.Status  = StatusEnum.Assigned
+
+    # Notify the assigned staff member
+    notify_ticket_assigned(ticket)
+
     return chosen
-
-
-def _notify_admin(ticket: Ticket, notif_type: str, message: str):
-    from app import db
-    from app.models.admin_notification import AdminNotification
-    db.session.add(AdminNotification(
-        Type      = notif_type,
-        Message   = message,
-        TicketId  = ticket.TicketId,
-        IsRead    = False,
-    ))
