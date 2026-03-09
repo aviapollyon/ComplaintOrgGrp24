@@ -14,6 +14,20 @@ def notify(user_id: int, title: str, message: str,
     ))
 
 
+def notify_ticket_submitted(ticket):
+    """Confirm submission to the student with their unique tracking reference."""
+    ref = ticket.TrackingRef or f'#{ticket.TicketId}'
+    notify(
+        user_id    = ticket.StudentId,
+        title      = f'Complaint Submitted — Ref: {ref}',
+        message    = (f'Your complaint "{ticket.Title}" has been received and is '  
+                      f'being reviewed. Your tracking reference is {ref}. '
+                      f'Keep this reference for all follow-up enquiries.'),
+        notif_type = 'ticket_submitted',
+        ticket_id  = ticket.TicketId,
+    )
+
+
 def notify_ticket_assigned(ticket):
     if ticket.StaffId:
         notify(
@@ -26,10 +40,11 @@ def notify_ticket_assigned(ticket):
 
 
 def notify_status_update(ticket, changed_by_user):
+    ref = f' [Ref: {ticket.TrackingRef}]' if ticket.TrackingRef else ''
     notify(
         user_id    = ticket.StudentId,
         title      = f'Ticket #{ticket.TicketId} Updated',
-        message    = (f'Your ticket "{ticket.Title}" status changed to '
+        message    = (f'Your ticket "{ticket.Title}"{ref} status changed to '
                       f'"{ticket.Status.value}" by {changed_by_user.FullName}.'),
         notif_type = 'status_update',
         ticket_id  = ticket.TicketId,
@@ -37,11 +52,12 @@ def notify_status_update(ticket, changed_by_user):
 
 
 def notify_staff_reply(ticket, staff_user):
+    ref = f' [Ref: {ticket.TrackingRef}]' if ticket.TrackingRef else ''
     notify(
         user_id    = ticket.StudentId,
         title      = f'Staff Replied — Ticket #{ticket.TicketId}',
         message    = (f'{staff_user.FullName} sent you a message on '
-                      f'ticket "{ticket.Title}". Please check and reply.'),
+                      f'ticket "{ticket.Title}"{ref}. Please check and reply.'),
         notif_type = 'new_reply',
         ticket_id  = ticket.TicketId,
     )
@@ -60,10 +76,11 @@ def notify_student_replied(ticket, student_user):
 
 
 def notify_ticket_resolved(ticket, staff_user):
+    ref = f' [Ref: {ticket.TrackingRef}]' if ticket.TrackingRef else ''
     notify(
         user_id    = ticket.StudentId,
         title      = f'Ticket #{ticket.TicketId} Resolved',
-        message    = (f'Your ticket "{ticket.Title}" has been resolved by '
+        message    = (f'Your ticket "{ticket.Title}"{ref} has been resolved by '
                       f'{staff_user.FullName}. Please leave your feedback.'),
         notif_type = 'ticket_resolved',
         ticket_id  = ticket.TicketId,
@@ -71,21 +88,23 @@ def notify_ticket_resolved(ticket, staff_user):
 
 
 def notify_ticket_rejected(ticket, actor):
+    ref = f' [Ref: {ticket.TrackingRef}]' if ticket.TrackingRef else ''
     notify(
         user_id    = ticket.StudentId,
         title      = f'Ticket #{ticket.TicketId} Rejected',
-        message    = f'Your ticket "{ticket.Title}" has been rejected by {actor.FullName}.',
+        message    = (f'Your ticket "{ticket.Title}"{ref} has been rejected by {actor.FullName}.'),
         notif_type = 'ticket_rejected',
         ticket_id  = ticket.TicketId,
     )
 
 
 def notify_progress_update(ticket, staff_user):
+    ref = f' [Ref: {ticket.TrackingRef}]' if ticket.TrackingRef else ''
     notify(
         user_id    = ticket.StudentId,
         title      = f'Progress Update — Ticket #{ticket.TicketId}',
         message    = (f'{staff_user.FullName} posted a progress update on '
-                      f'ticket "{ticket.Title}".'),
+                      f'ticket "{ticket.Title}"{ref}.'),
         notif_type = 'status_update',
         ticket_id  = ticket.TicketId,
     )

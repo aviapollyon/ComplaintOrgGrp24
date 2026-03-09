@@ -1,0 +1,328 @@
+{% extends "base.html" %}
+{% block title %}Reports & Analytics — Admin{% endblock %}
+
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  @media print {
+    .no-print { display: none !important; }
+    .card { break-inside: avoid; }
+    body { font-size: 12px; }
+    .container { max-width: 100% !important; }
+    canvas { max-height: 220px !important; }
+  }
+  .metric-card { border-left: 4px solid; }
+  .metric-card.primary   { border-color: #0d6efd; }
+  .metric-card.success   { border-color: #198754; }
+  .metric-card.warning   { border-color: #ffc107; }
+  .metric-card.info      { border-color: #0dcaf0; }
+  .chart-container { position: relative; height: 260px; }
+</style>
+{% endblock %}
+
+{% block content %}
+{# ── Page header ── #}
+<div class="d-flex justify-content-between align-items-center mb-4 no-print">
+  <h3 class="mb-0"><i class="bi bi-bar-chart-fill me-2 text-primary"></i>Reports &amp; Analytics</h3>
+  <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
+    <i class="bi bi-printer me-1"></i>Print / Save PDF
+  </button>
+</div>
+<div class="text-muted small mb-4 d-none d-print-block">
+  DUT Grievance Portal — Analytics Report &nbsp;|&nbsp; Generated: {{ now.strftime('%d %B %Y %H:%M') }}
+</div>
+
+{# ── Summary KPIs ── #}
+{% set total_tickets   = month_data | sum %}
+{% set total_resolved  = dept_resolved | sum %}
+{% set total_open      = dept_unresolved | sum %}
+{% set overall_avg     = (dept_avg_times | select('>', 0) | list) %}
+{% set avg_resolution  = (overall_avg | sum / overall_avg | length) | round(1) if overall_avg else 0 %}
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card shadow-sm border-0 metric-card primary h-100">
+      <div class="card-body">
+        <div class="fs-2 fw-bold text-primary">{{ total_tickets }}</div>
+        <div class="small text-muted">Tickets (Last 12 Months)</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card shadow-sm border-0 metric-card success h-100">
+      <div class="card-body">
+        <div class="fs-2 fw-bold text-success">{{ total_resolved }}</div>
+        <div class="small text-muted">Total Resolved</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card shadow-sm border-0 metric-card warning h-100">
+      <div class="card-body">
+        <div class="fs-2 fw-bold text-warning">{{ total_open }}</div>
+        <div class="small text-muted">Currently Open</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card shadow-sm border-0 metric-card info h-100">
+      <div class="card-body">
+        <div class="fs-2 fw-bold text-info">{{ avg_resolution }}h</div>
+        <div class="small text-muted">Avg Resolution Time</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Monthly Volume Chart ── #}
+<div class="row g-4 mb-4">
+  <div class="col-lg-8">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-graph-up me-1"></i>Monthly Ticket Volume (Last 12 Months)
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="monthlyChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {# ── Complaints per Category (top 5) ── #}
+  <div class="col-lg-4">
+    <div class="card shadow-sm border-0 h-100">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-tags me-1"></i>Most Common Issues
+      </div>
+      <div class="card-body">
+        <div class="chart-container">
+          <canvas id="categoryDoughnut"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Category Breakdown Table ── #}
+<div class="row g-4 mb-4">
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-list-ol me-1"></i>Complaints per Category
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>Category</th><th class="text-end">Tickets</th><th>Share</th></tr>
+          </thead>
+          <tbody>
+            {% set grand_total = category_counts | sum %}
+            {% for i in range(categories | length) %}
+            {% set pct = ((category_counts[i] / grand_total * 100) | round(1)) if grand_total else 0 %}
+            <tr>
+              <td class="small">{{ categories[i] }}</td>
+              <td class="text-end small fw-semibold">{{ category_counts[i] }}</td>
+              <td style="width:40%;">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="progress flex-grow-1" style="height:8px;">
+                    <div class="progress-bar bg-primary" style="width:{{ pct }}%"></div>
+                  </div>
+                  <span class="small text-muted" style="min-width:40px;">{{ pct }}%</span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  {# ── Average Resolution Time per Dept ── #}
+  <div class="col-lg-6">
+    <div class="card shadow-sm border-0">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-clock-history me-1"></i>Average Resolution Time by Department
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr><th>Department</th><th class="text-end">Resolved</th><th class="text-end">Avg Hours</th></tr>
+          </thead>
+          <tbody>
+            {% for i in range(dept_labels | length) %}
+            <tr>
+              <td class="small">{{ dept_labels[i] }}</td>
+              <td class="text-end small">{{ dept_resolved[i] }}</td>
+              <td class="text-end small">
+                {% if dept_avg_times[i] > 0 %}
+                  <span class="{{ 'text-success' if dept_avg_times[i] < 24 else ('text-warning' if dept_avg_times[i] < 72 else 'text-danger') }}">
+                    {{ dept_avg_times[i] }}h
+                  </span>
+                {% else %}
+                  <span class="text-muted">—</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Department Resolved vs Open Chart ── #}
+<div class="row g-4 mb-4">
+  <div class="col-12">
+    <div class="card shadow-sm border-0">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-building me-1"></i>Department Performance — Resolved vs Open
+      </div>
+      <div class="card-body">
+        <div class="chart-container" style="height:300px;">
+          <canvas id="deptBarChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Staff Performance Table ── #}
+<div class="card shadow-sm border-0 mb-4">
+  <div class="card-header fw-semibold">
+    <i class="bi bi-person-badge me-1"></i>Staff Performance
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Staff Member</th>
+          <th>Department</th>
+          <th class="text-end">Assigned</th>
+          <th class="text-end">Resolved</th>
+          <th class="text-end">Resolution Rate</th>
+          <th class="text-end">Avg Hours</th>
+          <th class="text-end">Avg Rating</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for sp in staff_perf %}
+        {% set rate = ((sp.resolved / sp.assigned * 100) | round(1)) if sp.assigned else 0 %}
+        <tr>
+          <td class="small fw-semibold">{{ sp.staff.FullName }}</td>
+          <td class="small text-muted">{{ sp.staff.department.Name if sp.staff.department else '—' }}</td>
+          <td class="text-end small">{{ sp.assigned }}</td>
+          <td class="text-end small text-success">{{ sp.resolved }}</td>
+          <td class="text-end small">
+            <div class="d-flex align-items-center justify-content-end gap-2">
+              <div class="progress" style="width:60px;height:6px;">
+                <div class="progress-bar {{ 'bg-success' if rate >= 70 else ('bg-warning' if rate >= 40 else 'bg-danger') }}"
+                     style="width:{{ rate }}%"></div>
+              </div>
+              {{ rate }}%
+            </div>
+          </td>
+          <td class="text-end small">
+            {% if sp.avg_hours %}
+              <span class="{{ 'text-success' if sp.avg_hours < 24 else ('text-warning' if sp.avg_hours < 72 else 'text-danger') }}">
+                {{ sp.avg_hours }}h
+              </span>
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-end small">
+            {% if sp.avg_rating %}
+              {% for i in range(sp.avg_rating | int) %}<i class="bi bi-star-fill text-warning" style="font-size:0.75rem;"></i>{% endfor %}
+              {{ sp.avg_rating }}
+            {% else %}—{% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="text-center text-muted small py-3">No staff data available.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+const MONTHS   = {{ months | tojson }};
+const MDATA    = {{ month_data | tojson }};
+const CATS     = {{ categories | tojson }};
+const CCOUNTS  = {{ category_counts | tojson }};
+const DLABELS  = {{ dept_labels | tojson }};
+const DRESOLVED= {{ dept_resolved | tojson }};
+const DOPEN    = {{ dept_unresolved | tojson }};
+
+// Palette helpers
+const PALETTE = [
+  '#0d6efd','#198754','#ffc107','#dc3545','#0dcaf0',
+  '#6f42c1','#fd7e14','#20c997','#d63384','#6c757d',
+  '#0a58ca','#146c43','#997404','#842029','#087990',
+  '#432874','#984c14',
+];
+
+// ── Monthly Volume ──
+new Chart(document.getElementById('monthlyChart'), {
+  type: 'line',
+  data: {
+    labels: MONTHS,
+    datasets: [{
+      label: 'Tickets Submitted',
+      data: MDATA,
+      borderColor: '#0d6efd',
+      backgroundColor: 'rgba(13,110,253,0.08)',
+      tension: 0.3,
+      fill: true,
+      pointBackgroundColor: '#0d6efd',
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, ticks: { stepSize: 1 } }
+    }
+  }
+});
+
+// ── Category Doughnut (top 8) ──
+const sortIdx = [...Array(CATS.length).keys()].sort((a,b) => CCOUNTS[b]-CCOUNTS[a]).slice(0,8);
+new Chart(document.getElementById('categoryDoughnut'), {
+  type: 'doughnut',
+  data: {
+    labels: sortIdx.map(i => CATS[i]),
+    datasets: [{
+      data: sortIdx.map(i => CCOUNTS[i]),
+      backgroundColor: sortIdx.map((_,i) => PALETTE[i % PALETTE.length]),
+      borderWidth: 2,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } }
+  }
+});
+
+// ── Department Bar ──
+new Chart(document.getElementById('deptBarChart'), {
+  type: 'bar',
+  data: {
+    labels: DLABELS,
+    datasets: [
+      { label: 'Resolved', data: DRESOLVED, backgroundColor: '#198754' },
+      { label: 'Open',     data: DOPEN,     backgroundColor: '#dc3545' },
+    ]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' } },
+    scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
+  }
+});
+</script>
+{% endblock %}

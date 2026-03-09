@@ -75,3 +75,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+// ── Character counter for fields with data-minlen attribute ──────────────────
+(function () {
+    document.addEventListener('DOMContentLoaded', function () {
+        document.querySelectorAll('[data-minlen]').forEach(function (el) {
+            const minLen = parseInt(el.dataset.minlen, 10) || 0;
+            const maxLen = parseInt(el.dataset.maxlen, 10) || 0;
+            const counter = document.createElement('div');
+            counter.className = 'form-text char-counter';
+            el.insertAdjacentElement('afterend', counter);
+            function update() {
+                const len = el.value.length;
+                const ok  = len >= minLen;
+                counter.textContent = len + '\u202f/\u202fmin\u00a0' + minLen
+                    + (maxLen ? '\u202f(max\u00a0' + maxLen + ')' : '')
+                    + '\u00a0characters';
+                counter.className = 'form-text char-counter ' + (ok ? 'text-success' : 'text-danger');
+            }
+            el.addEventListener('input', update);
+            update();
+        });
+    });
+}());

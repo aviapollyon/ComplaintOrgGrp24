@@ -23,6 +23,19 @@
       <div class="card-body">
         <p class="text-muted">{{ ticket.Description }}</p>
         <div class="row g-3 mt-1">
+          {% if ticket.TrackingRef %}
+          <div class="col-12">
+            <div class="alert alert-info d-flex align-items-center gap-2 py-2 mb-0">
+              <i class="bi bi-upc-scan fs-5"></i>
+              <div>
+                <span class="small text-muted">Tracking Reference</span>
+                <br/>
+                <span class="fw-bold font-monospace fs-6">{{ ticket.TrackingRef }}</span>
+                <span class="text-muted small ms-2">— use this reference for all follow-up enquiries</span>
+              </div>
+            </div>
+          </div>
+          {% endif %}
           <div class="col-sm-4">
             <div class="small text-muted">Category</div>
             <span class="badge bg-secondary">{{ ticket.Category }}</span>
@@ -261,7 +274,9 @@
                           {{ reply_form.hidden_tag() }}
                           {{ reply_form.comment(class="form-control form-control-sm mb-1",
                                                 rows=2,
-                                                placeholder="Reply to " ~ update.author.FullName ~ "…") }}
+                                                placeholder="Reply to " ~ update.author.FullName ~ "…",
+                                                **{"data-minlen": "2", "data-maxlen": "2000"}) }}
+                          <div class="form-text text-muted" style="font-size:0.7rem;">Minimum 2 characters required.</div>
                           <div class="d-flex gap-2 align-items-center">
                             <label class="btn btn-sm btn-outline-secondary mb-0">
                               <i class="bi bi-paperclip"></i>
@@ -393,7 +408,8 @@
             {{ reopen_form.hidden_tag() }}
             <div class="mb-3">
               {{ reopen_form.reason.label(class="form-label fw-semibold small") }}
-              {{ reopen_form.reason(class="form-control form-control-sm") }}
+              {{ reopen_form.reason(class="form-control form-control-sm", **{"data-minlen": "10", "data-maxlen": "1000"}) }}
+              <div class="form-text text-muted">Minimum 10 characters required.</div>
             </div>
             {{ reopen_form.submit(class="btn btn-secondary btn-sm w-100") }}
           </form>

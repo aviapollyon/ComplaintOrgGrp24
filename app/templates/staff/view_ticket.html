@@ -274,7 +274,8 @@
           </div>
           <div class="mb-3">
             {{ update_form.comment.label(class="form-label fw-semibold small") }}
-            {{ update_form.comment(class="form-control form-control-sm") }}
+            {{ update_form.comment(class="form-control form-control-sm", **{"data-minlen": "5", "data-maxlen": "2000"}) }}
+            <div class="form-text text-muted">Minimum 5 characters required.</div>
           </div>
           {{ update_form.submit(class="btn btn-primary btn-sm w-100") }}
         </form>
@@ -293,7 +294,10 @@
               action="{{ url_for('staff.reply_ticket', ticket_id=ticket.TicketId) }}"
               novalidate>
           {{ reply_form.hidden_tag() }}
-          <div class="mb-3">{{ reply_form.comment(class="form-control form-control-sm") }}</div>
+          <div class="mb-3">
+            {{ reply_form.comment(class="form-control form-control-sm", **{"data-minlen": "5", "data-maxlen": "2000"}) }}
+            <div class="form-text text-muted">Minimum 5 characters required.</div>
+          </div>
           {{ reply_form.submit(class="btn btn-warning btn-sm w-100 text-dark fw-semibold") }}
         </form>
       </div>
@@ -310,7 +314,8 @@
           {{ resolve_form.hidden_tag() }}
           <div class="mb-3">
             {{ resolve_form.resolution.label(class="form-label fw-semibold small") }}
-            {{ resolve_form.resolution(class="form-control form-control-sm") }}
+            {{ resolve_form.resolution(class="form-control form-control-sm", **{"data-minlen": "10", "data-maxlen": "3000"}) }}
+            <div class="form-text text-muted">Minimum 10 characters required.</div>
           </div>
           {{ resolve_form.submit(class="btn btn-success btn-sm w-100") }}
         </form>
@@ -337,7 +342,8 @@
           </div>
           <div class="mb-3">
             {{ escalation_form.reason.label(class="form-label fw-semibold small") }}
-            {{ escalation_form.reason(class="form-control form-control-sm") }}
+            {{ escalation_form.reason(class="form-control form-control-sm", **{"data-minlen": "10", "data-maxlen": "1000"}) }}
+            <div class="form-text text-muted">Minimum 10 characters required.</div>
           </div>
           {{ escalation_form.submit(class="btn btn-secondary btn-sm w-100") }}
         </form>
@@ -365,7 +371,8 @@
           </div>
           <div class="mb-3">
             {{ reassign_form.reason.label(class="form-label fw-semibold small") }}
-            {{ reassign_form.reason(class="form-control form-control-sm") }}
+            {{ reassign_form.reason(class="form-control form-control-sm", **{"data-minlen": "10", "data-maxlen": "1000"}) }}
+            <div class="form-text text-muted">Minimum 10 characters required.</div>
           </div>
           {{ reassign_form.submit(class="btn btn-outline-secondary btn-sm w-100") }}
         </form>

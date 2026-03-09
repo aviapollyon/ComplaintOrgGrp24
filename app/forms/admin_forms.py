@@ -114,6 +114,23 @@ class ForceStatusForm(FlaskForm):
     submit  = SubmitField('Apply Status')
 
 
+PRIORITY_OVERRIDE_CHOICES = [
+    ('High',   'High'),
+    ('Medium', 'Medium'),
+    ('Low',    'Low'),
+]
+
+
+class ForcePriorityForm(FlaskForm):
+    priority = SelectField('New Priority', choices=PRIORITY_OVERRIDE_CHOICES,
+                           validators=[DataRequired()])
+    reason   = TextAreaField('Reason',
+                             validators=[DataRequired(), Length(min=5, max=500)],
+                             render_kw={"rows": 2,
+                                        "placeholder": "Reason for priority override..."})
+    submit   = SubmitField('Apply Priority')
+
+
 class AddDepartmentForm(FlaskForm):
     name        = StringField('Department Name',
                               validators=[DataRequired(), Length(min=2, max=120)])

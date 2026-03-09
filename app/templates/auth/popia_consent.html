@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}POPIA Consent — DUT Grievance Portal{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-md-8 col-lg-7">
+    <div class="card shadow border-0">
+      <div class="card-header bg-primary text-white py-3">
+        <h5 class="mb-0">
+          <i class="bi bi-shield-check me-2"></i>
+          Protection of Personal Information Act (POPIA) Consent
+        </h5>
+      </div>
+      <div class="card-body p-4">
+        <p class="text-muted small mb-1">
+          <strong>Republic of South Africa — POPIA (Act 4 of 2013)</strong>
+        </p>
+        <hr/>
+
+        <p>
+          The Durban University of Technology (DUT) is committed to protecting your personal
+          information in accordance with the
+          <strong>Protection of Personal Information Act, 2013 (POPIA)</strong>.
+          Before you use the DUT Digital Grievance &amp; Complaint Portal, please read and
+          acknowledge the following:
+        </p>
+
+        <h6 class="fw-bold mt-3">What information we collect</h6>
+        <ul class="small text-muted">
+          <li>Your full name and institutional email address</li>
+          <li>The content of complaints and grievances you submit</li>
+          <li>Any attachments you upload in support of your complaint</li>
+          <li>Ticket activity history and communications with staff</li>
+        </ul>
+
+        <h6 class="fw-bold mt-3">Why we collect it</h6>
+        <ul class="small text-muted">
+          <li>To process, manage, and resolve your complaint or grievance</li>
+          <li>To communicate updates about your ticket to you</li>
+          <li>To improve institutional service delivery through analytics</li>
+        </ul>
+
+        <h6 class="fw-bold mt-3">How we protect it</h6>
+        <ul class="small text-muted">
+          <li>Your data is stored securely on institutional servers</li>
+          <li>Access is limited to authorised staff only</li>
+          <li>Passwords are hashed and never stored in plain text</li>
+          <li>Your information will not be shared with third parties without your consent,
+              except as required by law</li>
+        </ul>
+
+        <h6 class="fw-bold mt-3">Your rights under POPIA</h6>
+        <ul class="small text-muted">
+          <li>You have the right to access your personal information held by DUT</li>
+          <li>You may request correction or deletion of your information</li>
+          <li>You may object to the processing of your information</li>
+          <li>You may lodge a complaint with the
+              <a href="https://inforegulator.org.za" target="_blank" rel="noopener">
+                Information Regulator of South Africa</a>
+          </li>
+        </ul>
+
+        <div class="alert alert-info small mt-3 mb-4">
+          <i class="bi bi-info-circle me-1"></i>
+          By clicking <strong>"I Agree &amp; Continue"</strong> you confirm that you have
+          read, understood, and consent to the processing of your personal information
+          as described above, for the purposes of the DUT Digital Grievance Portal.
+        </div>
+
+        <form method="POST" action="{{ url_for('auth.popia_consent') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <div class="form-check mb-4">
+            <input class="form-check-input" type="checkbox" id="popia_agree"
+                   name="popia_agree" value="1" required/>
+            <label class="form-check-label" for="popia_agree">
+              I have read and I consent to the processing of my personal information
+              in accordance with POPIA and the DUT Privacy Policy.
+            </label>
+          </div>
+          <div class="d-flex gap-2">
+            <button type="submit" class="btn btn-primary px-4">
+              <i class="bi bi-check-circle me-1"></i>I Agree &amp; Continue
+            </button>
+            <a href="{{ url_for('auth.logout') }}" class="btn btn-outline-secondary">
+              Decline &amp; Logout
+            </a>
+          </div>
+        </form>
+      </div>
+      <div class="card-footer bg-light text-muted small">
+        For queries about POPIA, contact the DUT Information Officer at
+        <a href="mailto:popia@dut.ac.za">popia@dut.ac.za</a>.
+        &nbsp;|&nbsp; <a href="https://inforegulator.org.za" target="_blank" rel="noopener">Information Regulator</a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

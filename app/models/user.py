@@ -29,6 +29,8 @@ class User(UserMixin, db.Model):
     CreatedAt = db.Column(db.DateTime, default=datetime.utcnow)
     UpdatedAt = db.Column(db.DateTime, default=datetime.utcnow,
                           onupdate=datetime.utcnow)
+    POPIAConsent   = db.Column(db.Boolean, default=False, nullable=False)
+    POPIAConsentAt = db.Column(db.DateTime, nullable=True)
 
     # ── Relationships — all back_populates; NO backref= ───────────────────────
     submitted_tickets = db.relationship(

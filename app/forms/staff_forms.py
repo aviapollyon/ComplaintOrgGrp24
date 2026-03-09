@@ -97,5 +97,5 @@ class StaffTicketFilterForm(FlaskForm):
         validators=[Optional()]
     )
     search   = StringField('Search', validators=[Optional()],
-                           render_kw={"placeholder": "Search title..."})
+                           render_kw={"placeholder": "Search title or ref..."})
     sort     = SelectField('Sort By', choices=SORT_CHOICES, validators=[Optional()])

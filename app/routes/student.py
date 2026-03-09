@@ -21,7 +21,7 @@ from app.utils.helpers        import (
 )
 from app.utils.sorting        import apply_sort
 from app.services.assignment  import auto_assign_ticket
-from app.services.notifications import notify_student_replied
+from app.services.notifications import notify_student_replied, notify_ticket_submitted
 from app.forms.student_forms  import (
     SubmitTicketForm, EditTicketForm, FeedbackForm,
     TicketFilterForm, StudentReplyForm, ReopenRequestForm
@@ -42,10 +42,21 @@ def dashboard():
             query = query.filter(Ticket.Status == StatusEnum(filter_form.status.data))
         except ValueError:
             pass
+    if filter_form.priority.data:
+        try:
+            query = query.filter(Ticket.Priority == PriorityEnum(filter_form.priority.data))
+        except ValueError:
+            pass
     if filter_form.category.data:
         query = query.filter(Ticket.Category == filter_form.category.data)
     if filter_form.search.data:
-        query = query.filter(Ticket.Title.ilike(f'%{filter_form.search.data}%'))
+        s = filter_form.search.data.strip()
+        query = query.filter(
+            db.or_(
+                Ticket.Title.ilike(f'%{s}%'),
+                Ticket.TrackingRef.ilike(f'%{s}%'),
+            )
+        )
 
     query       = apply_sort(query, filter_form.sort.data or 'newest')
     tickets     = query.all()
@@ -76,6 +87,32 @@ def get_subcategories():
     cat  = request.args.get('category', '')
     subs = CATEGORY_SUBCATEGORY_MAP.get(cat, [])
     return jsonify(subs)
+
+
+@student_bp.route('/track-ticket')
+@login_required
+@role_required('Student')
+def track_ticket():
+    """Look up a ticket by its tracking reference number."""
+    ref = request.args.get('ref', '').strip().upper()
+    if not ref:
+        flash('Please enter a tracking reference number.', 'warning')
+        return redirect(url_for('student.dashboard'))
+
+    ticket = Ticket.query.filter_by(
+        TrackingRef=ref,
+        StudentId=current_user.UserId
+    ).first()
+
+    if ticket:
+        return redirect(url_for('student.view_ticket', ticket_id=ticket.TicketId))
+
+    flash(
+        f'No ticket found for reference <strong>{ref}</strong>. '
+        f'Please check the reference and try again.',
+        'danger'
+    )
+    return redirect(url_for('student.dashboard'))
 
 
 @student_bp.route('/submit', methods=['GET', 'POST'])
@@ -125,8 +162,21 @@ def submit_ticket():
         auto_assign_ticket(ticket)
         db.session.flush()
         check_and_raise_flags(ticket)
+
+        # Generate a unique tracking reference now that the ticket ID is available
+        ticket.TrackingRef = ticket.generate_tracking_ref(ticket.TicketId)
+        db.session.flush()
+
+        # Notify student with their reference number
+        notify_ticket_submitted(ticket)
+
         db.session.commit()
-        flash('Your complaint has been submitted successfully.', 'success')
+        flash(
+            f'Your complaint has been submitted. '
+            f'Tracking reference: <strong>{ticket.TrackingRef}</strong>. '
+            f'A confirmation notification has been sent to you.',
+            'success'
+        )
         return redirect(url_for('student.view_ticket', ticket_id=ticket.TicketId))
 
     return render_template('student/submit_ticket.html', form=form,

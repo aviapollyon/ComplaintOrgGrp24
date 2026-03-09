@@ -16,7 +16,7 @@
       <div class="col-md-3">
         <label class="form-label small fw-semibold">Search</label>
         <input type="text" name="search" class="form-control form-control-sm"
-               placeholder="Title or ID…" value="{{ filter_form.search.data or '' }}"/>
+               placeholder="Title, ref or ID…" value="{{ filter_form.search.data or '' }}"/>
       </div>
       <div class="col-md-2">
         <label class="form-label small fw-semibold">Status</label>
@@ -54,6 +54,24 @@
           {% endfor %}
         </select>
       </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Category</label>
+        <select name="category" class="form-select form-select-sm">
+          {% for value, label in filter_form.category.choices %}
+            <option value="{{ value }}"
+              {% if filter_form.category.data == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Sort By</label>
+        <select name="sort" class="form-select form-select-sm">
+          {% for value, label in filter_form.sort.choices %}
+            <option value="{{ value }}"
+              {% if filter_form.sort.data == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
       <div class="col-md-1">
         <button type="submit" class="btn btn-primary btn-sm w-100">
           <i class="bi bi-funnel"></i>
@@ -68,7 +86,7 @@
     <table class="table table-hover align-middle mb-0 small">
       <thead class="table-light">
         <tr>
-          <th>#</th><th>Title</th><th>Student</th><th>Staff</th>
+          <th>#</th><th>Title</th><th>Reference</th><th>Student</th><th>Staff</th>
           <th>Dept</th><th>Priority</th><th>Status</th><th>Submitted</th><th></th>
         </tr>
       </thead>
@@ -77,6 +95,14 @@
         <tr>
           <td class="text-muted">#{{ t.TicketId }}</td>
           <td class="fw-semibold">{{ t.Title }}</td>
+          <td>
+            {% if t.TrackingRef %}
+              <span class="font-monospace badge bg-light text-dark border"
+                    style="font-size:0.68rem;">{{ t.TrackingRef }}</span>
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
           <td>{{ t.student.FullName if t.student else '—' }}</td>
           <td>{{ t.staff.FullName   if t.staff   else '<span class="text-muted">Unassigned</span>' | safe }}</td>
           <td>{{ t.department.Name  if t.department else '—' }}</td>

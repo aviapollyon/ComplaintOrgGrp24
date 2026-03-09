@@ -23,7 +23,7 @@ from app.utils.decorators        import role_required
 from app.forms.admin_forms       import (
     AddUserForm, EditUserForm,
     AdminTicketFilterForm, AdminUserFilterForm,
-    ReassignTicketForm, ForceStatusForm,
+    ReassignTicketForm, ForceStatusForm, ForcePriorityForm,
     AddDepartmentForm, EditDepartmentForm,
     AnnouncementForm, EscalationReviewForm,
 )
@@ -327,7 +327,12 @@ def tickets():
     query = Ticket.query
     if filter_form.search.data:
         s = f'%{filter_form.search.data}%'
-        query = query.filter(Ticket.Title.ilike(s))
+        query = query.filter(
+            db.or_(
+                Ticket.Title.ilike(s),
+                Ticket.TrackingRef.ilike(s),
+            )
+        )
     if filter_form.status.data:
         try:
             query = query.filter(Ticket.Status == StatusEnum(filter_form.status.data))
@@ -387,6 +392,8 @@ def ticket_detail(ticket_id):
 
     force_form = ForceStatusForm()
 
+    priority_form = ForcePriorityForm()
+
     pending_escalation = EscalationRequest.query.filter_by(
         TicketId=ticket_id, Status='Pending'
     ).first()
@@ -404,6 +411,7 @@ def ticket_detail(ticket_id):
         attachments=attachments,
         reassign_form=reassign_form,
         force_form=force_form,
+        priority_form=priority_form,
         pending_escalation=pending_escalation,
         escalation_form=escalation_form,
         pending_reopen=pending_reopen,
@@ -484,6 +492,41 @@ def force_status(ticket_id):
         ))
         db.session.commit()
         flash(f'Status changed to "{new_status.value}".', 'success')
+    else:
+        flash('Please fill in all required fields.', 'danger')
+
+    return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
+
+
+# Force Priority route: Admin overrides the ticket priority with an audit trail.
+@admin_bp.route('/tickets/<int:ticket_id>/force-priority', methods=['POST'])
+@login_required
+@role_required('Admin')
+def force_priority(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    form   = ForcePriorityForm()
+
+    if form.validate_on_submit():
+        try:
+            new_priority = PriorityEnum(form.priority.data)
+        except ValueError:
+            flash('Invalid priority.', 'danger')
+            return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
+
+        old_priority     = ticket.Priority.value
+        ticket.Priority  = new_priority
+        ticket.UpdatedAt = datetime.utcnow()
+
+        db.session.add(TicketUpdate(
+            TicketId      = ticket.TicketId,
+            UserId        = current_user.UserId,
+            Comment       = (f'[ADMIN PRIORITY OVERRIDE] Priority changed from '
+                             f'{old_priority} to {new_priority.value}. '
+                             f'Reason: {form.reason.data.strip()}'),
+            IsReplyThread = False,
+        ))
+        db.session.commit()
+        flash(f'Priority changed to "{new_priority.value}".', 'success')
     else:
         flash('Please fill in all required fields.', 'danger')
 

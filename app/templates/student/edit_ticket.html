@@ -24,10 +24,11 @@
 
           <div class="mb-3">
             {{ form.title.label(class="form-label fw-semibold") }}
-            {{ form.title(class="form-control" + (" is-invalid" if form.title.errors else "")) }}
+            {{ form.title(class="form-control" + (" is-invalid" if form.title.errors else ""), **{"data-minlen": "5", "data-maxlen": "255"}) }}
             {% for error in form.title.errors %}
               <div class="invalid-feedback">{{ error }}</div>
             {% endfor %}
+            <div class="form-text text-muted">Minimum 5 characters required.</div>
           </div>
 
           <div class="mb-3">
@@ -44,10 +45,11 @@
 
           <div class="mb-3">
             {{ form.description.label(class="form-label fw-semibold") }}
-            {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else "")) }}
+            {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else ""), **{"data-minlen": "20"}) }}
             {% for error in form.description.errors %}
               <div class="invalid-feedback">{{ error }}</div>
             {% endfor %}
+            <div class="form-text text-muted">Minimum 20 characters required.</div>
           </div>
 
           <!-- Current Attachments -->

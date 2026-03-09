@@ -1,6 +1,7 @@
 import enum
 from app import db
 from datetime import datetime
+import uuid
 
 
 class StatusEnum(enum.Enum):
@@ -42,6 +43,7 @@ class Ticket(db.Model):
     Description     = db.Column(db.Text,        nullable=False)
     Category        = db.Column(db.String(100), nullable=False)
     SubCategory     = db.Column(db.String(100), nullable=True)
+    TrackingRef     = db.Column(db.String(20),  nullable=True, unique=True, index=True)
     Priority        = db.Column(db.Enum(PriorityEnum), nullable=False,
                                 default=PriorityEnum.Medium)
     Status          = db.Column(db.Enum(StatusEnum), nullable=False,
@@ -97,3 +99,9 @@ class Ticket(db.Model):
 
     def __repr__(self):
         return f'<Ticket #{self.TicketId} [{self.Status.value}]>'
+
+    @staticmethod
+    def generate_tracking_ref(ticket_id: int) -> str:
+        """Returns a human-readable tracking ref like GRV-202603-00001234."""
+        now = datetime.utcnow()
+        return f"GRV-{now.strftime('%Y%m')}-{ticket_id:08d}"

@@ -62,7 +62,35 @@
                 <i class="bi bi-megaphone me-1"></i>Announcements
               </a>
             </li>
+            {# ── Admin system bell ── #}
+            <li class="nav-item">
+              <a class="nav-link position-relative" href="{{ url_for('admin.notifications') }}"
+                 title="System Notifications">
+                <i class="bi bi-bell-fill fs-6"></i>
+                {% if admin_unread_count > 0 %}
+                  <span class="position-absolute top-0 start-100 translate-middle
+                               badge rounded-pill bg-danger"
+                        style="font-size:0.6rem;min-width:1.2rem;">
+                    {{ admin_unread_count if admin_unread_count < 100 else '99+' }}
+                  </span>
+                {% endif %}
+              </a>
+            </li>
           {% endif %}
+          {# ── Per-user notification bell (all roles) ── #}
+          <li class="nav-item">
+            <a class="nav-link position-relative" href="{{ url_for('notif.list_notifications') }}"
+               title="My Notifications">
+              <i class="bi bi-bell fs-6"></i>
+              {% if user_unread_count > 0 %}
+                <span class="position-absolute top-0 start-100 translate-middle
+                             badge rounded-pill bg-warning text-dark"
+                      style="font-size:0.6rem;min-width:1.2rem;">
+                  {{ user_unread_count if user_unread_count < 100 else '99+' }}
+                </span>
+              {% endif %}
+            </a>
+          </li>
           <li class="nav-item ms-lg-2">
             <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">
               <i class="bi bi-box-arrow-right me-1"></i>Logout

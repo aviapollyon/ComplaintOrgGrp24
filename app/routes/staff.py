@@ -55,7 +55,14 @@ def dashboard():
     if filter_form.category.data:
         query = query.filter(Ticket.Category == filter_form.category.data)
     if filter_form.search.data:
-        query = query.filter(Ticket.Title.ilike(f'%{filter_form.search.data}%'))
+        s = filter_form.search.data.strip()
+        from app import db as _db
+        query = query.filter(
+            _db.or_(
+                Ticket.Title.ilike(f'%{s}%'),
+                Ticket.TrackingRef.ilike(f'%{s}%'),
+            )
+        )
 
     query    = apply_sort(query, filter_form.sort.data or 'newest')
     tickets  = query.all()

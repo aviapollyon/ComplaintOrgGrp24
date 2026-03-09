@@ -1,5 +1,6 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
+from datetime import datetime
 from app import db
 from app.models.user import User, RoleEnum
 from app.models.department import Department
@@ -59,6 +60,10 @@ def login():
             # Issue Flask-Login persistent credential cookies/header state mappings 
             login_user(user)
             flash('Logged in successfully.', 'success')
+
+            # Students who haven't given POPIA consent are redirected to the consent page
+            if user.Role == RoleEnum.Student and not user.POPIAConsent:
+                return redirect(url_for('auth.popia_consent'))
             
             # Send the authenticated person toward the dashboard distributor 
             return redirect(url_for('auth.index'))
@@ -131,3 +136,28 @@ def logout():
     
     # Dump back onto main authentication login access landing screen
     return redirect(url_for('auth.login'))
+
+
+# POPIA consent route: shown to students who have not yet given POPIA consent
+@auth_bp.route('/popia-consent', methods=['GET', 'POST'])
+@login_required
+def popia_consent():
+    # Only students need consent; redirect others away
+    if current_user.Role != RoleEnum.Student:
+        return redirect(url_for('auth.index'))
+
+    # Already consented — skip
+    if current_user.POPIAConsent:
+        return redirect(url_for('auth.index'))
+
+    if request.method == 'POST':
+        if request.form.get('popia_agree') == '1':
+            current_user.POPIAConsent   = True
+            current_user.POPIAConsentAt = datetime.utcnow()
+            db.session.commit()
+            flash('Thank you for confirming your POPIA consent.', 'success')
+            return redirect(url_for('auth.index'))
+        else:
+            flash('You must tick the consent checkbox to proceed.', 'danger')
+
+    return render_template('auth/popia_consent.html')

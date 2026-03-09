@@ -91,17 +91,26 @@ class FeedbackForm(FlaskForm):
     submit  = SubmitField('Submit Feedback')
 
 
+PRIORITY_FILTER_CHOICES = [
+    ('', 'All Priorities'),
+    ('High',   'High'),
+    ('Medium', 'Medium'),
+    ('Low',    'Low'),
+]
+
+
 class TicketFilterForm(FlaskForm):
     class Meta:
         csrf = False
     status   = SelectField('Status',   choices=STATUS_FILTER_CHOICES, validators=[Optional()])
+    priority = SelectField('Priority', choices=PRIORITY_FILTER_CHOICES, validators=[Optional()])
     category = SelectField(
         'Category',
         choices=[('', 'All Categories')] + [(c, c) for c in TICKET_CATEGORIES],
         validators=[Optional()]
     )
     search   = StringField('Search', validators=[Optional()],
-                           render_kw={"placeholder": "Search title..."})
+                           render_kw={"placeholder": "Search title or ref..."})
     sort     = SelectField('Sort By', choices=SORT_CHOICES, validators=[Optional()])
 
 
