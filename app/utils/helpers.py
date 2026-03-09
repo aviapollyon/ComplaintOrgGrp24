@@ -1,26 +1,187 @@
 import os
 from flask import current_app, url_for
 
-CATEGORY_PRIORITY_MAP = {
-    'Academic'       : 'High',
-    'Financial'      : 'High',
-    'Facilities'     : 'Medium',
-    'IT Support'     : 'Medium',
-    'Accommodation'  : 'Medium',
-    'Administration' : 'Low',
-    'Other'          : 'Low',
+# ── Category → SubCategories ──────────────────────────────────────────────────
+CATEGORY_SUBCATEGORY_MAP: dict[str, list[str]] = {
+    'Academic': [
+        'Module Result / Mark',
+        'Lecturer Conduct',
+        'Course Material',
+        'Timetable Issue',
+        'Attendance',
+        'Academic Appeals',
+        'Other Academic',
+    ],
+    'Financial': [
+        'NSFAS Allowance',
+        'NSFAS Registration',
+        'Fee Account Error',
+        'Refund Request',
+        'Bursary Payment',
+        'Other Financial',
+    ],
+    'Examination': [
+        'Timetable Clash',
+        'Venue Issue',
+        'Deferred Exam',
+        'Supplementary Exam',
+        'Aegrotat Application',
+        'Results Query',
+        'Other Examination',
+    ],
+    'Bursary & Funding': [
+        'External Bursary',
+        'DUT Scholarship',
+        'Funding Allocation',
+        'Funding Confirmation',
+        'Other Bursary',
+    ],
+    'Registration': [
+        'Module Add / Drop',
+        'Registration Block',
+        'Curriculum Change',
+        'Late Registration',
+        'Other Registration',
+    ],
+    'Facilities': [
+        'Broken Equipment',
+        'Maintenance Request',
+        'Cleaning / Hygiene',
+        'Electricity / Lighting',
+        'Water Supply',
+        'Heating / Cooling',
+        'Other Facilities',
+    ],
+    'IT Support': [
+        'Wi-Fi / Internet',
+        'Student Email',
+        'Blackboard / LMS',
+        'Student Portal',
+        'Computer Lab',
+        'Printing',
+        'Password / Access',
+        'Other IT',
+    ],
+    'Accommodation': [
+        'Room Transfer',
+        'Maintenance / Repairs',
+        'Noise Complaint',
+        'Key / Lock Issue',
+        'Water / Utilities',
+        'Roommate Conflict',
+        'Other Accommodation',
+    ],
+    'Health & Wellness': [
+        'Counselling Referral',
+        'Medical Assistance',
+        'Mental Health Support',
+        'Disability Support',
+        'Other Health',
+    ],
+    'Library': [
+        'Book / Resource Access',
+        'Overdue Fine',
+        'Printing Credits',
+        'Database Access',
+        'Other Library',
+    ],
+    'Transport': [
+        'Shuttle / Bus',
+        'Parking',
+        'Route / Schedule',
+        'Other Transport',
+    ],
+    'Administration': [
+        'Transcript / Certificate',
+        'Name / Record Change',
+        'Proof of Registration',
+        'Student Card',
+        'Other Administration',
+    ],
+    'Student Conduct': [
+        'Harassment',
+        'Discrimination',
+        'Bullying',
+        'Academic Misconduct',
+        'Other Conduct',
+    ],
+    'Other': [
+        'General Enquiry',
+        'Suggestion',
+        'Other',
+    ],
 }
 
-TICKET_CATEGORIES = list(CATEGORY_PRIORITY_MAP.keys())
+TICKET_CATEGORIES = list(CATEGORY_SUBCATEGORY_MAP.keys())
 
-CATEGORY_DEPARTMENT_MAP = {
-    'Academic'       : 'Academic Affairs',
-    'Financial'      : 'Finance & Accounts',
-    'Facilities'     : 'Facilities Management',
-    'IT Support'     : 'Information Technology',
-    'Accommodation'  : 'Student Housing',
-    'Administration' : 'Student Administration',
-    'Other'          : 'Student Administration',
+# ── Category → Priority ───────────────────────────────────────────────────────
+CATEGORY_PRIORITY_MAP: dict[str, str] = {
+    'Academic'          : 'High',
+    'Financial'         : 'High',
+    'Examination'       : 'High',
+    'Bursary & Funding' : 'High',
+    'Registration'      : 'High',
+    'Facilities'        : 'Medium',
+    'IT Support'        : 'Medium',
+    'Accommodation'     : 'Medium',
+    'Health & Wellness' : 'Medium',
+    'Library'           : 'Low',
+    'Transport'         : 'Low',
+    'Administration'    : 'Low',
+    'Student Conduct'   : 'Low',
+    'Other'             : 'Low',
+}
+
+# ── Category → Department ─────────────────────────────────────────────────────
+CATEGORY_DEPARTMENT_MAP: dict[str, str] = {
+    'Academic'          : 'Academic Affairs',
+    'Financial'         : 'Finance & Accounts',
+    'Examination'       : 'Academic Affairs',
+    'Bursary & Funding' : 'Finance & Accounts',
+    'Registration'      : 'Student Administration',
+    'Facilities'        : 'Facilities Management',
+    'IT Support'        : 'Information Technology',
+    'Accommodation'     : 'Student Housing',
+    'Health & Wellness' : 'Student Administration',
+    'Library'           : 'Information Technology',
+    'Transport'         : 'Facilities Management',
+    'Administration'    : 'Student Administration',
+    'Student Conduct'   : 'Student Administration',
+    'Other'             : 'Student Administration',
+}
+
+# ── Keyword flagging ──────────────────────────────────────────────────────────
+FLAG_THRESHOLD = 3
+
+CATEGORY_KEYWORDS: dict[str, list[str]] = {
+    'Academic'          : ['result', 'mark', 'grade', 'module', 'lecturer',
+                           'attendance', 'timetable', 'syllabus', 'fail'],
+    'Financial'         : ['nsfas', 'fee', 'payment', 'invoice', 'statement',
+                           'debit', 'charge', 'refund', 'allowance'],
+    'Examination'       : ['exam', 'timetable', 'venue', 'clash', 'supplementary',
+                           'deferred', 'aegrotat', 'results'],
+    'Bursary & Funding' : ['bursary', 'scholarship', 'sponsor', 'funding',
+                           'allocation', 'confirmation'],
+    'Registration'      : ['register', 'registration', 'module', 'add', 'drop',
+                           'curriculum', 'blocked', 'outstanding'],
+    'Facilities'        : ['broken', 'maintenance', 'repair', 'toilet', 'water',
+                           'electricity', 'lift', 'elevator', 'cleaning',
+                           'air conditioning', 'heating'],
+    'IT Support'        : ['wifi', 'wi-fi', 'internet', 'blackboard', 'email',
+                           'password', 'login', 'access', 'laptop', 'printer',
+                           'lab', 'portal', 'system'],
+    'Accommodation'     : ['room', 'residence', 'noise', 'roommate', 'transfer',
+                           'water', 'hot water', 'keys', 'lock', 'maintenance'],
+    'Health & Wellness' : ['sick', 'mental health', 'counselling', 'injury',
+                           'clinic', 'doctor', 'medication'],
+    'Library'           : ['book', 'overdue', 'fine', 'printing', 'credit',
+                           'resource', 'access', 'database'],
+    'Transport'         : ['bus', 'shuttle', 'parking', 'route', 'schedule'],
+    'Administration'    : ['transcript', 'certificate', 'letter', 'proof',
+                           'document', 'record', 'id', 'name change'],
+    'Student Conduct'   : ['harassment', 'bullying', 'discrimination', 'misconduct',
+                           'complaint', 'code of conduct'],
+    'Other'             : [],
 }
 
 
@@ -32,28 +193,91 @@ def get_department_name_for_category(category: str) -> str:
     return CATEGORY_DEPARTMENT_MAP.get(category, 'Student Administration')
 
 
+def get_subcategories_for_category(category: str) -> list[str]:
+    return CATEGORY_SUBCATEGORY_MAP.get(category, ['Other'])
+
+
 def allowed_file(filename: str) -> bool:
     allowed = current_app.config.get('ALLOWED_EXTENSIONS', set())
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in allowed
 
 
-def save_uploaded_file(file, ticket_id: int) -> tuple[str, str]:
-    from werkzeug.utils import secure_filename
-    filename  = secure_filename(file.filename)
-    ticket_dir = os.path.join(current_app.config['UPLOAD_FOLDER'], str(ticket_id))
-    os.makedirs(ticket_dir, exist_ok=True)
-    filepath = os.path.join(ticket_dir, filename)
-    file.save(filepath)
-    return filename, filepath
+def save_uploaded_file(file, subfolder: str) -> tuple[str, str]:
+    from app.services.storage import save_file
+    return save_file(file, subfolder)
 
 
 def attachment_url(attachment) -> str:
-    """
-    Return a URL that serves the attachment file.
-    Strips the UPLOAD_FOLDER prefix so the path is relative to the upload root.
-    """
+    if attachment.FilePath.startswith(('http://', 'https://')):
+        return attachment.FilePath
     upload_root = current_app.config['UPLOAD_FOLDER']
     rel_path    = os.path.relpath(attachment.FilePath, upload_root)
-    # Normalise to forward slashes for URL building
     rel_path    = rel_path.replace(os.sep, '/')
     return url_for('student.serve_upload', filepath=rel_path)
+
+
+def extract_keywords(text: str, category: str) -> list[str]:
+    keywords   = CATEGORY_KEYWORDS.get(category, [])
+    text_lower = text.lower()
+    return [kw for kw in keywords if kw in text_lower]
+
+
+def check_and_raise_flags(ticket) -> None:
+    from app import db
+    from app.models.ticket import Ticket
+    from app.models.ticket_flag import TicketFlag, FlaggedTicket
+    from app.models.admin_notification import AdminNotification
+
+    combined  = f'{ticket.Title} {ticket.Description}'
+    matched   = extract_keywords(combined, ticket.Category)
+
+    for kw in matched:
+        similar = Ticket.query.filter(
+            Ticket.Category  == ticket.Category,
+            Ticket.TicketId  != ticket.TicketId,
+            (Ticket.Title.ilike(f'%{kw}%') |
+             Ticket.Description.ilike(f'%{kw}%'))
+        ).all()
+
+        total_count = len(similar) + 1
+
+        if total_count >= FLAG_THRESHOLD:
+            existing = TicketFlag.query.filter_by(
+                Category=ticket.Category,
+                Keyword=kw,
+                Status='active'
+            ).first()
+
+            if existing:
+                existing.TicketCount = total_count
+                already = FlaggedTicket.query.filter_by(
+                    FlagId=existing.FlagId,
+                    TicketId=ticket.TicketId
+                ).first()
+                if not already:
+                    db.session.add(FlaggedTicket(
+                        FlagId=existing.FlagId,
+                        TicketId=ticket.TicketId
+                    ))
+            else:
+                new_flag = TicketFlag(
+                    Category=ticket.Category, Keyword=kw,
+                    TicketCount=total_count, Status='active',
+                )
+                db.session.add(new_flag)
+                db.session.flush()
+                for t in similar + [ticket]:
+                    db.session.add(FlaggedTicket(
+                        FlagId=new_flag.FlagId,
+                        TicketId=t.TicketId
+                    ))
+                db.session.add(AdminNotification(
+                    Type    = 'recurring_issue',
+                    Message = (
+                        f'Recurring issue flagged: {total_count} tickets in category '
+                        f'"{ticket.Category}" → subcategory concern around keyword '
+                        f'"{kw}". This may indicate a systemic problem requiring attention.'
+                    ),
+                    TicketId = ticket.TicketId,
+                    IsRead   = False,
+                ))

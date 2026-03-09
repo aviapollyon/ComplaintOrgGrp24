@@ -3,65 +3,55 @@
 
 {% block content %}
 <div class="row justify-content-center">
-  <div class="col-lg-8">
-    <nav aria-label="breadcrumb" class="mb-3">
-      <ol class="breadcrumb">
-        <li class="breadcrumb-item"><a href="{{ url_for('student.dashboard') }}">Dashboard</a></li>
-        <li class="breadcrumb-item active">Submit Complaint</li>
-      </ol>
-    </nav>
-
+  <div class="col-lg-7">
     <div class="card shadow-sm border-0">
       <div class="card-header bg-primary text-white">
-        <h5 class="mb-0"><i class="bi bi-plus-circle me-2"></i>Submit a New Complaint</h5>
+        <h5 class="mb-0">
+          <i class="bi bi-plus-circle me-2"></i>Submit a Complaint
+        </h5>
       </div>
       <div class="card-body p-4">
-        <form method="POST" enctype="multipart/form-data" novalidate>
+        <form method="POST" enctype="multipart/form-data" novalidate id="submitForm">
           {{ form.hidden_tag() }}
 
           <div class="mb-3">
             {{ form.title.label(class="form-label fw-semibold") }}
             {{ form.title(class="form-control" + (" is-invalid" if form.title.errors else "")) }}
-            {% for error in form.title.errors %}
-              <div class="invalid-feedback">{{ error }}</div>
-            {% endfor %}
+            {% for e in form.title.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
           </div>
 
-          <div class="mb-3">
-            {{ form.category.label(class="form-label fw-semibold") }}
-            {{ form.category(class="form-select" + (" is-invalid" if form.category.errors else ""), id="categorySelect") }}
-            {% for error in form.category.errors %}
-              <div class="invalid-feedback">{{ error }}</div>
-            {% endfor %}
-          </div>
-
-          <!-- Auto-priority display -->
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Auto-assigned Priority</label>
-            <div id="priorityBadge" class="p-2 rounded bg-light border">
-              <span id="priorityText" class="fw-bold">—</span>
-              <span class="text-muted small ms-2">(set automatically based on category)</span>
+          <div class="row g-3 mb-3">
+            <div class="col-md-6">
+              {{ form.category.label(class="form-label fw-semibold") }}
+              {{ form.category(class="form-select" + (" is-invalid" if form.category.errors else ""),
+                               id="categorySelect") }}
+              {% for e in form.category.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
+            </div>
+            <div class="col-md-6">
+              {{ form.sub_category.label(class="form-label fw-semibold") }}
+              <select name="sub_category" id="subCategorySelect"
+                      class="form-select{{ ' is-invalid' if form.sub_category.errors else '' }}"
+                      required>
+                <option value="">— Select Category first —</option>
+              </select>
+              {% for e in form.sub_category.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
             </div>
           </div>
 
           <div class="mb-3">
             {{ form.description.label(class="form-label fw-semibold") }}
             {{ form.description(class="form-control" + (" is-invalid" if form.description.errors else "")) }}
-            {% for error in form.description.errors %}
-              <div class="invalid-feedback">{{ error }}</div>
-            {% endfor %}
+            {% for e in form.description.errors %}<div class="invalid-feedback">{{ e }}</div>{% endfor %}
           </div>
 
           <div class="mb-4">
             {{ form.attachments.label(class="form-label fw-semibold") }}
-            {{ form.attachments(class="form-control", multiple=True) }}
-            <div class="form-text">Allowed: PDF, PNG, JPG, JPEG, DOC, DOCX. Max 5MB per file.</div>
+            {{ form.attachments(class="form-control", id="fileInput", multiple=True) }}
+            <div class="form-text">Max 5 files, 5 MB each. PDF, images, Word documents.</div>
+            <div id="fileError" class="text-danger small mt-1"></div>
           </div>
 
-          <div class="d-flex gap-2">
-            {{ form.submit(class="btn btn-primary") }}
-            <a href="{{ url_for('student.dashboard') }}" class="btn btn-outline-secondary">Cancel</a>
-          </div>
+          {{ form.submit(class="btn btn-primary w-100") }}
         </form>
       </div>
     </div>
@@ -71,26 +61,29 @@
 
 {% block extra_scripts %}
 <script>
-  const priorityMap = {{ priority_map_json | safe }};
-  const categorySelect = document.getElementById('categorySelect');
-  const priorityText = document.getElementById('priorityText');
-  const priorityBadge = document.getElementById('priorityBadge');
+const subcategoryMap = {{ subcategory_map | tojson }};
+const categorySelect    = document.getElementById('categorySelect');
+const subCategorySelect = document.getElementById('subCategorySelect');
 
-  const colourMap = {
-    'High': ['text-danger', 'border-danger'],
-    'Medium': ['text-warning', 'border-warning'],
-    'Low': ['text-success', 'border-success'],
-  };
+function populateSubcategories(selectedCat, selectedSub) {
+  subCategorySelect.innerHTML = '<option value="">— Select Sub-Category —</option>';
+  const subs = subcategoryMap[selectedCat] || [];
+  subs.forEach(sub => {
+    const opt    = document.createElement('option');
+    opt.value    = sub;
+    opt.textContent = sub;
+    if (sub === selectedSub) opt.selected = true;
+    subCategorySelect.appendChild(opt);
+  });
+}
 
-  function updatePriority() {
-    const priority = priorityMap[categorySelect.value] || 'Medium';
-    priorityText.textContent = priority;
-    priorityBadge.className = 'p-2 rounded border bg-light';
-    const colours = colourMap[priority] || [];
-    colours.forEach(c => priorityBadge.classList.add(c));
-  }
+categorySelect.addEventListener('change', () => {
+  populateSubcategories(categorySelect.value, '');
+});
 
-  categorySelect.addEventListener('change', updatePriority);
-  updatePriority();
+// Pre-populate on page load (e.g. validation failure re-render)
+if (categorySelect.value) {
+  populateSubcategories(categorySelect.value, '{{ form.sub_category.data or "" }}');
+}
 </script>
 {% endblock %}

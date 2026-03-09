@@ -10,8 +10,8 @@
 </nav>
 
 <div class="row g-4">
-  <!-- LEFT -->
   <div class="col-lg-8">
+    <!-- Ticket Info -->
     <div class="card shadow-sm border-0 mb-4">
       <div class="card-header d-flex justify-content-between align-items-center">
         <h5 class="mb-0">{{ ticket.Title }}</h5>
@@ -35,6 +35,9 @@
           <div class="col-sm-4">
             <div class="small text-muted">Category</div>
             <span class="badge bg-secondary">{{ ticket.Category }}</span>
+            {% if ticket.SubCategory %}
+              <span class="badge bg-light text-dark border ms-1">{{ ticket.SubCategory }}</span>
+            {% endif %}
           </div>
           <div class="col-sm-4">
             <div class="small text-muted">Priority</div>
@@ -47,6 +50,12 @@
             <div class="small text-muted">Submitted</div>
             <span class="small">{{ ticket.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
           </div>
+          {% if ticket.ResolvedAt %}
+          <div class="col-sm-4">
+            <div class="small text-muted">Resolved At</div>
+            <span class="small">{{ ticket.ResolvedAt.strftime('%d %b %Y %H:%M') }}</span>
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -96,9 +105,7 @@
             <i class="bi bi-arrow-right-circle-fill text-secondary mt-1"></i>
             <div>
               <span class="small text-muted">{{ update.Comment }}</span>
-              {% if update.StatusChange %}
-                {{ update_status_badge(update.StatusChange.value) }}
-              {% endif %}
+              {% if update.StatusChange %}{{ update_status_badge(update.StatusChange.value) }}{% endif %}
               <div class="text-muted" style="font-size:0.72rem;">
                 {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
               </div>
@@ -122,9 +129,7 @@
                   </span>
                 </div>
                 <p class="mb-1 small">{{ update.Comment }}</p>
-                {% if update.StatusChange %}
-                  {{ update_status_badge(update.StatusChange.value) }}
-                {% endif %}
+                {% if update.StatusChange %}{{ update_status_badge(update.StatusChange.value) }}{% endif %}
               </div>
             </div>
           </div>
@@ -149,9 +154,7 @@
                   </span>
                 </div>
                 <p class="mb-1 small">{{ update.Comment }}</p>
-                {% if update.StatusChange %}
-                  {{ update_status_badge(update.StatusChange.value) }}
-                {% endif %}
+                {% if update.StatusChange %}{{ update_status_badge(update.StatusChange.value) }}{% endif %}
               </div>
               {% if update.IsReplyThread %}
                 {% for reply in update.replies.all() %}
@@ -183,27 +186,19 @@
     </div>
   </div>
 
-  <!-- RIGHT: Actions -->
+  <!-- RIGHT: Action Panels -->
   <div class="col-lg-4">
 
-    <!-- Pending Escalation Alert -->
+    {# ── Pending Escalation ── #}
     {% if pending_escalation %}
     <div class="card border-warning shadow-sm mb-3">
       <div class="card-header bg-warning text-dark fw-semibold">
-        <i class="bi bi-arrow-up-right-circle-fill me-1"></i>Pending Escalation Request
+        <i class="bi bi-arrow-up-right-circle-fill me-1"></i>Pending Escalation
       </div>
       <div class="card-body">
-        <p class="small mb-1">
-          <strong>Requested by:</strong> {{ pending_escalation.requested_by.FullName }}
-        </p>
-        <p class="small mb-1">
-          <strong>Target Department:</strong> {{ pending_escalation.target_dept.Name }}
-        </p>
-        <p class="small mb-3">
-          <strong>Reason:</strong> {{ pending_escalation.Reason }}
-        </p>
-
-        <!-- Approve -->
+        <p class="small mb-1"><strong>Requested by:</strong> {{ pending_escalation.requested_by.FullName }}</p>
+        <p class="small mb-1"><strong>Target Dept:</strong> {{ pending_escalation.target_dept.Name }}</p>
+        <p class="small mb-3"><strong>Reason:</strong> {{ pending_escalation.Reason }}</p>
         <form method="POST"
               action="{{ url_for('admin.review_escalation', ticket_id=ticket.TicketId) }}"
               class="mb-2" novalidate>
@@ -211,29 +206,99 @@
           <div class="mb-2">
             {{ escalation_form.staff_id.label(class="form-label fw-semibold small") }}
             {{ escalation_form.staff_id(class="form-select form-select-sm") }}
-            <div class="form-text">Staff in target department.</div>
           </div>
           <button type="submit" name="action" value="approve"
                   class="btn btn-success btn-sm w-100">
             <i class="bi bi-check-circle me-1"></i>Approve &amp; Reassign
           </button>
         </form>
-
-        <!-- Reject -->
         <form method="POST"
               action="{{ url_for('admin.review_escalation', ticket_id=ticket.TicketId) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
           <button type="submit" name="action" value="reject"
                   class="btn btn-outline-danger btn-sm w-100"
-                  onclick="return confirm('Reject this escalation request?')">
-            <i class="bi bi-x-circle me-1"></i>Reject Escalation
+                  onclick="return confirm('Reject escalation?')">
+            <i class="bi bi-x-circle me-1"></i>Reject
           </button>
         </form>
       </div>
     </div>
     {% endif %}
 
-    <!-- Reassign -->
+    {# ── Pending Reassignment Request ── #}
+    {% if pending_reassign %}
+    <div class="card border-info shadow-sm mb-3">
+      <div class="card-header bg-info text-dark fw-semibold">
+        <i class="bi bi-person-fill-up me-1"></i>Pending Reassignment Request
+      </div>
+      <div class="card-body">
+        <p class="small mb-1">
+          <strong>From:</strong> {{ pending_reassign.requested_by.FullName }}
+        </p>
+        <p class="small mb-1">
+          <strong>To:</strong> {{ pending_reassign.target_staff.FullName }}
+        </p>
+        <p class="small mb-3">
+          <strong>Reason:</strong> {{ pending_reassign.Reason }}
+        </p>
+        <form method="POST"
+              action="{{ url_for('admin.review_reassignment', ticket_id=ticket.TicketId) }}"
+              class="mb-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" name="action" value="approve"
+                  class="btn btn-success btn-sm w-100">
+            <i class="bi bi-check-circle me-1"></i>Approve Reassignment
+          </button>
+        </form>
+        <form method="POST"
+              action="{{ url_for('admin.review_reassignment', ticket_id=ticket.TicketId) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" name="action" value="reject"
+                  class="btn btn-outline-danger btn-sm w-100"
+                  onclick="return confirm('Reject this reassignment request?')">
+            <i class="bi bi-x-circle me-1"></i>Reject
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Pending Reopen Request ── #}
+    {% if pending_reopen %}
+    <div class="card border-warning shadow-sm mb-3">
+      <div class="card-header bg-warning text-dark fw-semibold">
+        <i class="bi bi-arrow-counterclockwise me-1"></i>Pending Reopen Request
+      </div>
+      <div class="card-body">
+        <p class="small mb-1">
+          <strong>Requested by:</strong> {{ pending_reopen.student.FullName }}
+        </p>
+        <p class="small mb-3">
+          <strong>Reason:</strong> {{ pending_reopen.Reason }}
+        </p>
+        <form method="POST"
+              action="{{ url_for('admin.review_reopen', ticket_id=ticket.TicketId) }}"
+              class="mb-2">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" name="action" value="approve"
+                  class="btn btn-success btn-sm w-100">
+            <i class="bi bi-check-circle me-1"></i>Approve &amp; Reopen
+          </button>
+        </form>
+        <form method="POST"
+              action="{{ url_for('admin.review_reopen', ticket_id=ticket.TicketId) }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <button type="submit" name="action" value="reject"
+                  class="btn btn-outline-danger btn-sm w-100"
+                  onclick="return confirm('Reject this reopen request?')">
+            <i class="bi bi-x-circle me-1"></i>Reject
+          </button>
+        </form>
+      </div>
+    </div>
+    {% endif %}
+
+    {# ── Standard Reassign ── #}
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-header bg-primary text-white fw-semibold">
         <i class="bi bi-person-fill-up me-1"></i>Reassign Ticket
@@ -257,7 +322,7 @@
       </div>
     </div>
 
-    <!-- Force Status -->
+    {# ── Force Status ── #}
     <div class="card shadow-sm border-warning mb-3">
       <div class="card-header bg-warning text-dark fw-semibold">
         <i class="bi bi-shield-fill-exclamation me-1"></i>Force Status Override
@@ -280,7 +345,7 @@
       </div>
     </div>
 
-    <!-- Feedback -->
+    {# ── Feedback ── #}
     {% if ticket.FeedbackRating %}
     <div class="card border-success shadow-sm">
       <div class="card-header bg-success text-white fw-semibold">

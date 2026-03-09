@@ -55,11 +55,71 @@
   </div>
 </div>
 
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0">
+    <i class="bi bi-person-workspace me-2 text-primary"></i>My Dashboard
+  </h3>
+  <span class="text-muted small">{{ current_user.FullName }}</span>
+</div>
+
+<!-- Stats -->
+<div class="row g-3 mb-4">
+  {% set stat_cards = [
+    (stats.total,        'Total Assigned',  'bi-ticket-detailed', 'secondary'),
+    (stats.in_progress,  'In Progress',     'bi-arrow-repeat',    'info'),
+    (stats.pending_info, 'Pending Info',    'bi-question-circle', 'warning'),
+    (stats.resolved,     'Resolved',        'bi-check-circle',    'success'),
+    (stats.overdue,      'Overdue (>3d)',   'bi-alarm',           'danger'),
+  ] %}
+  {% for value, label, icon, colour in stat_cards %}
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <i class="bi {{ icon }} fs-3 text-{{ colour }} mb-1 d-block"></i>
+        <div class="fs-4 fw-bold">{{ value }}</div>
+        <div class="small text-muted">{{ label }}</div>
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+  <div class="col-6 col-md-2">
+    <div class="card border-0 shadow-sm text-center">
+      <div class="card-body py-3">
+        <i class="bi bi-hourglass-split fs-3 text-primary mb-1 d-block"></i>
+        <div class="fs-4 fw-bold">
+          {{ stats.avg_hours ~ 'h' if stats.avg_hours else '—' }}
+        </div>
+        <div class="small text-muted">Avg Resolution</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ── Active flags banner ── #}
+{% if active_flags %}
+<div class="alert alert-danger d-flex align-items-start gap-2 mb-4">
+  <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0 mt-1"></i>
+  <div>
+    <strong>Recurring Issue Alert</strong> —
+    {{ active_flags | length }} keyword flag{{ 's' if active_flags | length > 1 else '' }}
+    active across your tickets:
+    {% for flag in active_flags %}
+      <span class="badge bg-danger ms-1">{{ flag.Category }} / {{ flag.Keyword }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
 <!-- Filters -->
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-body">
     <form method="GET" class="row g-2 align-items-end">
       <div class="col-md-3">
+        <label class="form-label small fw-semibold">Search</label>
+        <input type="text" name="search" class="form-control form-control-sm"
+               placeholder="Search title..." value="{{ filter_form.search.data or '' }}"/>
+      </div>
+      <div class="col-md-2">
         <label class="form-label small fw-semibold">Status</label>
         <select name="status" class="form-select form-select-sm">
           {% for value, label in filter_form.status.choices %}
@@ -70,7 +130,7 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
         <label class="form-label small fw-semibold">Priority</label>
         <select name="priority" class="form-select form-select-sm">
           {% for value, label in filter_form.priority.choices %}
@@ -92,7 +152,7 @@
           {% endfor %}
         </select>
       </div>
-      <div class="col-md-3">
+      <div class="col-md-2">
         <button type="submit" class="btn btn-primary btn-sm w-100">
           <i class="bi bi-funnel me-1"></i>Filter
         </button>
@@ -108,56 +168,41 @@
     <table class="table table-hover align-middle mb-0">
       <thead class="table-light">
         <tr>
-          <th>#</th>
-          <th>Title</th>
-          <th>Student</th>
-          <th>Category</th>
-          <th>Priority</th>
-          <th>Status</th>
-          <th>Last Updated</th>
-          <th>Actions</th>
+          <th>#</th><th>Title</th><th>Category</th>
+          <th>Priority</th><th>Status</th><th>Submitted</th><th></th>
         </tr>
       </thead>
       <tbody>
-        {% for ticket in tickets %}
-        <tr {% if (ticket.Status.value not in ['Resolved','Rejected']) and ((now - ticket.CreatedAt).days > 3) %}
-              class="table-danger"
-            {% endif %}>
-          <td class="text-muted small">#{{ ticket.TicketId }}</td>
+        {% from "macros/status_badge.html" import status_badge %}
+        {% for t in tickets %}
+        <tr class="{{ 'table-warning' if t.TicketId in flagged_ticket_ids else '' }}">
+          <td class="text-muted small">#{{ t.TicketId }}</td>
           <td>
-            <a href="{{ url_for('staff.view_ticket', ticket_id=ticket.TicketId) }}"
-               class="text-decoration-none fw-semibold">
-              {{ ticket.Title }}
-            </a>
-          </td>
-          <td class="small">{{ ticket.student.FullName }}</td>
-          <td><span class="badge bg-secondary">{{ ticket.Category }}</span></td>
-          <td>
-            {% if ticket.Priority.value == 'High' %}
-              <span class="badge bg-danger">High</span>
-            {% elif ticket.Priority.value == 'Medium' %}
-              <span class="badge bg-warning text-dark">Medium</span>
-            {% else %}
-              <span class="badge bg-success">Low</span>
+            <a href="{{ url_for('staff.view_ticket', ticket_id=t.TicketId) }}"
+               class="text-decoration-none fw-semibold">{{ t.Title }}</a>
+            {% if t.TicketId in flagged_ticket_ids %}
+              <span class="badge bg-danger ms-1"
+                    title="This ticket is part of a recurring issue flag">
+                <i class="bi bi-flag-fill me-1"></i>Flagged
+              </span>
+            {% endif %}
+            {% if t.Status.value == 'Pending Info' %}
+              <span class="badge bg-warning text-dark ms-1">
+                <i class="bi bi-question-circle me-1"></i>Reply Needed
+              </span>
             {% endif %}
           </td>
+          <td><span class="badge bg-secondary">{{ t.Category }}</span></td>
           <td>
-            {% set s = ticket.Status.value %}
-            {% if s == 'Submitted' %}
-              <span class="badge bg-secondary">Submitted</span>
-            {% elif s == 'Assigned' %}
-              <span class="badge bg-primary">Assigned</span>
-            {% elif s == 'In Progress' %}
-              <span class="badge bg-info text-dark">In Progress</span>
-            {% elif s == 'Resolved' %}
-              <span class="badge bg-success">Resolved</span>
-            {% elif s == 'Rejected' %}
-              <span class="badge bg-danger">Rejected</span>
+            {% if t.Priority.value == 'High' %}     <span class="badge bg-danger">High</span>
+            {% elif t.Priority.value == 'Medium' %} <span class="badge bg-warning text-dark">Medium</span>
+            {% else %}                              <span class="badge bg-success">Low</span>
             {% endif %}
           </td>
-          <td class="small text-muted">{{ ticket.UpdatedAt.strftime('%d %b %Y') }}</td>
+          <td>{{ status_badge(t.Status.value) }}</td>
+          <td class="small text-muted">{{ t.CreatedAt.strftime('%d %b %Y') }}</td>
           <td>
-            <a href="{{ url_for('staff.view_ticket', ticket_id=ticket.TicketId) }}"
+            <a href="{{ url_for('staff.view_ticket', ticket_id=t.TicketId) }}"
                class="btn btn-sm btn-outline-primary">
               <i class="bi bi-eye"></i>
             </a>
@@ -170,8 +215,8 @@
 </div>
 {% else %}
 <div class="text-center py-5 text-muted">
-  <i class="bi bi-inbox display-4"></i>
-  <p class="mt-3">No tickets assigned to you yet.</p>
+  <i class="bi bi-inbox display-4 d-block mb-3"></i>
+  No tickets match your filters.
 </div>
 {% endif %}
 {% endblock %}

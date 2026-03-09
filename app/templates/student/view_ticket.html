@@ -26,6 +26,9 @@
           <div class="col-sm-4">
             <div class="small text-muted">Category</div>
             <span class="badge bg-secondary">{{ ticket.Category }}</span>
+            {% if ticket.SubCategory %}
+              <span class="badge bg-light text-dark border ms-1">{{ ticket.SubCategory }}</span>
+            {% endif %}
           </div>
           <div class="col-sm-4">
             <div class="small text-muted">Department</div>
@@ -195,7 +198,6 @@
 
                   {# ── Only IsReplyThread comments get reply boxes ── #}
                   {% if update.IsReplyThread %}
-
                     {% for reply in update.replies.all() %}
                     <div class="d-flex gap-2 mt-2 ms-4">
                       <div class="rounded-circle
@@ -241,33 +243,38 @@
                     {% endfor %}
 
                     {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
-                    <div class="ms-4 mt-2">
-                      <form method="POST"
-                            action="{{ url_for('student.reply_to_update',
-                                               ticket_id=ticket.TicketId,
-                                               update_id=update.UpdateId) }}"
-                            enctype="multipart/form-data">
-                        {{ reply_form.hidden_tag() }}
-                        {{ reply_form.comment(class="form-control form-control-sm mb-1",
-                                              rows=2,
-                                              placeholder="Reply to " ~ update.author.FullName ~ "…") }}
-                        <div class="d-flex gap-2 align-items-center">
-                          <label class="btn btn-sm btn-outline-secondary mb-0">
-                            <i class="bi bi-paperclip"></i>
-                            {{ reply_form.attachments(class="d-none", multiple=True,
-                                                      id="fileInput_" ~ update.UpdateId) }}
-                          </label>
-                          <span class="small text-muted" id="fileLabel_{{ update.UpdateId }}">
-                            No file chosen
-                          </span>
-                          <button type="submit" class="btn btn-sm btn-primary ms-auto">
-                            <i class="bi bi-send me-1"></i>Reply
-                          </button>
+                      {% if update.UpdateId in locked_thread_ids %}
+                      <div class="ms-4 mt-2">
+                        <div class="alert alert-success py-2 small mb-0">
+                          <i class="bi bi-lock-fill me-1"></i>
+                          Staff has received your information and is progressing the ticket.
+                          No further replies are needed on this thread.
                         </div>
-                      </form>
-                    </div>
+                      </div>
+                      {% else %}
+                      <div class="ms-4 mt-2">
+                        <form method="POST"
+                              action="{{ url_for('student.reply_to_update',
+                                                ticket_id=ticket.TicketId,
+                                                update_id=update.UpdateId) }}"
+                              enctype="multipart/form-data">
+                          {{ reply_form.hidden_tag() }}
+                          {{ reply_form.comment(class="form-control form-control-sm mb-1",
+                                                rows=2,
+                                                placeholder="Reply to " ~ update.author.FullName ~ "…") }}
+                          <div class="d-flex gap-2 align-items-center">
+                            <label class="btn btn-sm btn-outline-secondary mb-0">
+                              <i class="bi bi-paperclip"></i>
+                              {{ reply_form.attachments(class="d-none", multiple=True) }}
+                            </label>
+                            <button type="submit" class="btn btn-sm btn-primary ms-auto">
+                              <i class="bi bi-send me-1"></i>Reply
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                      {% endif %}
                     {% endif %}
-
                   {% endif %}{# end IsReplyThread #}
 
                 </div>
@@ -370,6 +377,38 @@
     </div>
     {% endif %}
 
+    {% if ticket.Status.value in ['Resolved', 'Rejected'] %}
+      {% if not pending_reopen %}
+      <div class="card border-0 shadow-sm mt-3">
+        <div class="card-header fw-semibold bg-secondary text-white">
+          <i class="bi bi-arrow-counterclockwise me-1"></i>Request Reopen
+        </div>
+        <div class="card-body">
+          <p class="small text-muted mb-2">
+            If your issue has not been fully resolved, you can request admin to reopen this ticket.
+          </p>
+          <form method="POST"
+                action="{{ url_for('student.request_reopen', ticket_id=ticket.TicketId) }}"
+                novalidate>
+            {{ reopen_form.hidden_tag() }}
+            <div class="mb-3">
+              {{ reopen_form.reason.label(class="form-label fw-semibold small") }}
+              {{ reopen_form.reason(class="form-control form-control-sm") }}
+            </div>
+            {{ reopen_form.submit(class="btn btn-secondary btn-sm w-100") }}
+          </form>
+        </div>
+      </div>
+      {% else %}
+      <div class="alert alert-info mt-3 d-flex gap-2 align-items-start">
+        <i class="bi bi-arrow-counterclockwise mt-1 flex-shrink-0"></i>
+        <div>
+          <strong>Reopen Requested</strong><br>
+          <span class="small">Your request is pending admin review.</span>
+        </div>
+      </div>
+      {% endif %}
+    {% endif %}
   </div>
 </div>
 

@@ -34,6 +34,9 @@
           <div class="col-sm-4">
             <div class="small text-muted">Category</div>
             <span class="badge bg-secondary">{{ ticket.Category }}</span>
+            {% if ticket.SubCategory %}
+              <span class="badge bg-light text-dark border ms-1">{{ ticket.SubCategory }}</span>
+            {% endif %}
           </div>
           <div class="col-sm-4">
             <div class="small text-muted">Priority</div>
@@ -181,21 +184,30 @@
                     {% endfor %}
 
                     {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
-                    <div class="ms-4 mt-2">
-                      <form method="POST"
-                            action="{{ url_for('staff.thread_reply',
-                                               ticket_id=ticket.TicketId,
-                                               update_id=update.UpdateId) }}">
-                        {{ thread_reply_form.hidden_tag() }}
-                        <div class="input-group input-group-sm">
-                          {{ thread_reply_form.comment(class="form-control form-control-sm",
-                                                       placeholder="Continue thread…") }}
-                          <button type="submit" class="btn btn-primary btn-sm">
-                            <i class="bi bi-send"></i>
-                          </button>
+                      {% if update.UpdateId in locked_thread_ids %}
+                      <div class="ms-4 mt-2">
+                        <div class="alert alert-success py-2 small mb-0">
+                          <i class="bi bi-lock-fill me-1"></i>
+                          Thread closed — progress update received. No further replies needed.
                         </div>
-                      </form>
-                    </div>
+                      </div>
+                      {% else %}
+                      <div class="ms-4 mt-2">
+                        <form method="POST"
+                              action="{{ url_for('staff.thread_reply',
+                                                ticket_id=ticket.TicketId,
+                                                update_id=update.UpdateId) }}">
+                          {{ thread_reply_form.hidden_tag() }}
+                          <div class="input-group input-group-sm">
+                            {{ thread_reply_form.comment(class="form-control form-control-sm",
+                                                        placeholder="Continue thread…") }}
+                            <button type="submit" class="btn btn-primary btn-sm">
+                              <i class="bi bi-send"></i>
+                            </button>
+                          </div>
+                        </form>
+                      </div>
+                      {% endif %}
                     {% endif %}
                   {% endif %}
                 </div>
@@ -233,7 +245,7 @@
     {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
 
     <!-- Pending Escalation Notice -->
-  <!--
+
     {% if pending_escalation %}
     <div class="alert alert-warning d-flex gap-2 align-items-start">
       <i class="bi bi-arrow-up-right-circle-fill mt-1"></i>
@@ -246,7 +258,7 @@
       </div>
     </div>
     {% endif %}
-  -->
+
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-header bg-primary text-white fw-semibold">
         <i class="bi bi-arrow-repeat me-1"></i>Update Status
@@ -306,7 +318,6 @@
     </div>
 
     <!-- Escalation Request Panel -->
-  <!--
     {% if not pending_escalation %}
     <div class="card shadow-sm border-0 mb-3">
       <div class="card-header bg-secondary text-white fw-semibold">
@@ -333,7 +344,45 @@
       </div>
     </div>
     {% endif %}
-  -->
+
+    {% if not pending_reassign and ticket.Status.value not in ['Resolved', 'Rejected'] %}
+    <div class="card shadow-sm border-0 mb-3">
+      <div class="card-header bg-light fw-semibold">
+        <i class="bi bi-person-fill-up me-1"></i>Request Reassignment
+      </div>
+      <div class="card-body">
+        <p class="small text-muted mb-2">
+          Request admin to reassign this ticket to a colleague in your department.
+        </p>
+        {% if reassign_form.target_staff.choices %}
+        <form method="POST"
+              action="{{ url_for('staff.request_reassignment', ticket_id=ticket.TicketId) }}"
+              novalidate>
+          {{ reassign_form.hidden_tag() }}
+          <div class="mb-3">
+            {{ reassign_form.target_staff.label(class="form-label fw-semibold small") }}
+            {{ reassign_form.target_staff(class="form-select form-select-sm") }}
+          </div>
+          <div class="mb-3">
+            {{ reassign_form.reason.label(class="form-label fw-semibold small") }}
+            {{ reassign_form.reason(class="form-control form-control-sm") }}
+          </div>
+          {{ reassign_form.submit(class="btn btn-outline-secondary btn-sm w-100") }}
+        </form>
+        {% else %}
+        <p class="text-muted small mb-0">No other staff in your department.</p>
+        {% endif %}
+      </div>
+    </div>
+    {% elif pending_reassign %}
+    <div class="alert alert-info d-flex gap-2 align-items-start mb-3">
+      <i class="bi bi-person-fill-up mt-1 flex-shrink-0"></i>
+      <div>
+        <strong>Reassignment Pending</strong><br>
+        <span class="small">Requested to {{ pending_reassign.target_staff.FullName }}. Awaiting admin.</span>
+      </div>
+    </div>
+    {% endif %}
 
     {% else %}
     <div class="card border-0 shadow-sm">
@@ -344,15 +393,15 @@
           <hr/>
           <div class="text-start">
             <div class="small fw-semibold mb-1">Student Feedback</div>
-            {% for i in range(ticket.FeedbackRating) %}
-              <i class="bi bi-star-fill text-warning"></i>
-            {% endfor %}
-            {% for i in range(5 - ticket.FeedbackRating) %}
-              <i class="bi bi-star text-muted"></i>
-            {% endfor %}
-            {% if ticket.FeedbackComment %}
-              <p class="small text-muted mt-1 mb-0">{{ ticket.FeedbackComment }}</p>
-            {% endif %}
+              {% for i in range(ticket.FeedbackRating) %}
+                <i class="bi bi-star-fill text-warning"></i>
+              {% endfor %}
+              {% for i in range(5 - ticket.FeedbackRating) %}
+                <i class="bi bi-star text-muted"></i>
+              {% endfor %}
+              {% if ticket.FeedbackComment %}
+                <p class="small text-muted mt-1 mb-0">{{ ticket.FeedbackComment }}</p>
+              {% endif %}
           </div>
         {% endif %}
       </div>

@@ -4,6 +4,7 @@ from wtforms import (
     TextAreaField, PasswordField
 )
 from wtforms.validators import DataRequired, Email, Length, Optional, EqualTo
+from app.utils.helpers import TICKET_CATEGORIES
 
 ROLE_CHOICES = [
     ('Student', 'Student'),
@@ -30,6 +31,14 @@ PRIORITY_CHOICES = [
     ('Medium', 'Medium'),
     ('Low',    'Low'),
 ]
+SORT_CHOICES = [
+    ('newest',   'Newest First'),
+    ('oldest',   'Oldest First'),
+    ('priority', 'Priority (High → Low)'),
+    ('title',    'Title (A–Z)'),
+    ('id_asc',   'Ticket # ↑'),
+    ('id_desc',  'Ticket # ↓'),
+]
 
 
 class AddUserForm(FlaskForm):
@@ -37,7 +46,7 @@ class AddUserForm(FlaskForm):
     email      = StringField('Email',      validators=[DataRequired(), Email()])
     password   = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
     confirm    = PasswordField('Confirm',  validators=[DataRequired(),
-                                EqualTo('password', message='Passwords must match')])
+                               EqualTo('password', message='Passwords must match')])
     role       = SelectField('Role',       choices=ROLE_CHOICES, validators=[DataRequired()])
     department = SelectField('Department', coerce=int, validators=[Optional()])
     submit     = SubmitField('Create User')
@@ -57,8 +66,14 @@ class AdminTicketFilterForm(FlaskForm):
     search     = StringField('Search',     validators=[Optional()])
     status     = SelectField('Status',     choices=STATUS_CHOICES,   validators=[Optional()])
     priority   = SelectField('Priority',   choices=PRIORITY_CHOICES, validators=[Optional()])
-    department = SelectField('Department', coerce=int,               validators=[Optional()])
-    staff      = SelectField('Staff',      coerce=int,               validators=[Optional()])
+    category   = SelectField(
+        'Category',
+        choices=[('', 'All Categories')] + [(c, c) for c in TICKET_CATEGORIES],
+        validators=[Optional()]
+    )
+    department = SelectField('Department', coerce=int, validators=[Optional()])
+    staff      = SelectField('Staff',      coerce=int, validators=[Optional()])
+    sort       = SelectField('Sort By',    choices=SORT_CHOICES, validators=[Optional()])
 
 
 class AdminUserFilterForm(FlaskForm):
@@ -77,10 +92,17 @@ class ReassignTicketForm(FlaskForm):
 
 
 class EscalationReviewForm(FlaskForm):
-    """Admin approves an escalation and picks the target staff member."""
     staff_id = SelectField('Assign To (Target Dept)', coerce=int,
                            validators=[DataRequired()])
     submit   = SubmitField('Approve & Assign')
+
+
+class ReassignmentReviewForm(FlaskForm):
+    submit = SubmitField('Approve Reassignment')
+
+
+class ReopenReviewForm(FlaskForm):
+    submit = SubmitField('Approve Reopen')
 
 
 class ForceStatusForm(FlaskForm):

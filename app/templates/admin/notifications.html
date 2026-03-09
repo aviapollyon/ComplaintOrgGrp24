@@ -3,7 +3,8 @@
 {% block content %}
 
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <h3 class="mb-0"><i class="bi bi-bell me-2 text-primary"></i>Notifications</h3>
+  <h3 class="mb-0"><i class="bi bi-bell me-2 text-primary"></i>System Notifications</h3>
+  <span class="text-muted small">All notifications marked as read on page open</span>
 </div>
 
 {% if notifications %}
@@ -12,30 +13,53 @@
     {% for n in notifications %}
     <li class="list-group-item {{ 'bg-light' if not n.IsRead else '' }}">
       <div class="d-flex gap-3 align-items-start">
-        <div class="mt-1">
+
+        {# Icon + colour per type #}
+        <div class="mt-1 flex-shrink-0">
           {% if n.Type == 'escalation_request' %}
             <i class="bi bi-arrow-up-right-circle-fill text-warning fs-5"></i>
+          {% elif n.Type == 'reassignment_request' %}
+            <i class="bi bi-person-fill-up text-info fs-5"></i>
+          {% elif n.Type == 'reopen_request' %}
+            <i class="bi bi-arrow-counterclockwise text-primary fs-5"></i>
+          {% elif n.Type == 'recurring_issue' %}
+            <i class="bi bi-exclamation-triangle-fill text-danger fs-5"></i>
           {% else %}
-            <i class="bi bi-exclamation-circle-fill text-danger fs-5"></i>
+            <i class="bi bi-exclamation-circle-fill text-secondary fs-5"></i>
           {% endif %}
         </div>
+
         <div class="flex-grow-1">
-          <div class="fw-semibold small">
+          {# Heading per type #}
+          <div class="fw-semibold small mb-1">
             {% if n.Type == 'escalation_request' %}
-              Escalation Request
+              <span class="badge bg-warning text-dark me-1">Escalation Request</span>
+            {% elif n.Type == 'reassignment_request' %}
+              <span class="badge bg-info text-dark me-1">Reassignment Request</span>
+            {% elif n.Type == 'reopen_request' %}
+              <span class="badge bg-primary me-1">Reopen Request</span>
+            {% elif n.Type == 'unassigned_ticket' %}
+              <span class="badge bg-danger me-1">Unassigned Ticket</span>
+            {% elif n.Type == 'recurring_issue' %}
+              <span class="badge bg-danger me-1">Recurring Issue Flag</span>
             {% else %}
-              Unassigned Ticket
+              <span class="badge bg-secondary me-1">Notification</span>
+            {% endif %}
+            {% if not n.IsRead %}
+              <span class="badge bg-warning text-dark">New</span>
             {% endif %}
           </div>
+
           <p class="mb-1 small">{{ n.Message }}</p>
+
           <div class="d-flex align-items-center gap-3">
             <span class="text-muted" style="font-size:0.75rem;">
               {{ n.CreatedAt.strftime('%d %b %Y %H:%M') }}
             </span>
             {% if n.TicketId %}
               <a href="{{ url_for('admin.ticket_detail', ticket_id=n.TicketId) }}"
-                 class="btn btn-xs btn-sm btn-outline-primary py-0 px-2">
-                View Ticket #{{ n.TicketId }}
+                 class="btn btn-sm btn-outline-primary py-0 px-2">
+                <i class="bi bi-eye me-1"></i>View Ticket #{{ n.TicketId }}
               </a>
             {% endif %}
           </div>

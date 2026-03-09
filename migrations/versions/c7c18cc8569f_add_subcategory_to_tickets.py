@@ -1,8 +1,8 @@
-"""Full schema with user_notifications
+"""Add SubCategory to tickets
 
-Revision ID: 41ea2f826b11
+Revision ID: c7c18cc8569f
 Revises: 
-Create Date: 2026-03-09 08:42:35.270309
+Create Date: 2026-03-09 12:54:12.839764
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '41ea2f826b11'
+revision = 'c7c18cc8569f'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -21,10 +21,19 @@ def upgrade():
     op.create_table('departments',
     sa.Column('DepartmentId', sa.Integer(), nullable=False),
     sa.Column('Name', sa.String(length=120), nullable=False),
-    sa.Column('Description', sa.String(length=300), nullable=True),
-    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
+    sa.Column('Description', sa.Text(), nullable=True),
     sa.PrimaryKeyConstraint('DepartmentId'),
     sa.UniqueConstraint('Name')
+    )
+    op.create_table('ticket_flags',
+    sa.Column('FlagId', sa.Integer(), nullable=False),
+    sa.Column('Category', sa.String(length=100), nullable=False),
+    sa.Column('Keyword', sa.String(length=100), nullable=False),
+    sa.Column('TicketCount', sa.Integer(), nullable=False),
+    sa.Column('Status', sa.String(length=20), nullable=False),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
+    sa.Column('UpdatedAt', sa.DateTime(), nullable=True),
+    sa.PrimaryKeyConstraint('FlagId')
     )
     op.create_table('users',
     sa.Column('UserId', sa.Integer(), nullable=False),
@@ -32,8 +41,8 @@ def upgrade():
     sa.Column('Email', sa.String(length=150), nullable=False),
     sa.Column('PasswordHash', sa.String(length=256), nullable=False),
     sa.Column('Role', sa.Enum('Student', 'Staff', 'Admin', name='roleenum'), nullable=False),
-    sa.Column('IsActive', sa.Boolean(), nullable=False),
     sa.Column('DepartmentId', sa.Integer(), nullable=True),
+    sa.Column('IsActive', sa.Boolean(), nullable=False),
     sa.Column('CreatedAt', sa.DateTime(), nullable=True),
     sa.Column('UpdatedAt', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['DepartmentId'], ['departments.DepartmentId'], name='fk_users_department_id'),
@@ -45,28 +54,28 @@ def upgrade():
     sa.Column('Title', sa.String(length=200), nullable=False),
     sa.Column('Message', sa.Text(), nullable=False),
     sa.Column('TargetAudience', sa.String(length=20), nullable=False),
-    sa.Column('CreatedBy', sa.Integer(), nullable=False),
-    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
     sa.Column('IsActive', sa.Boolean(), nullable=False),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
+    sa.Column('CreatedBy', sa.Integer(), nullable=False),
     sa.ForeignKeyConstraint(['CreatedBy'], ['users.UserId'], name='fk_announcements_created_by'),
     sa.PrimaryKeyConstraint('AnnouncementId')
     )
     op.create_table('tickets',
     sa.Column('TicketId', sa.Integer(), nullable=False),
-    sa.Column('Title', sa.String(length=255), nullable=False),
-    sa.Column('Description', sa.Text(), nullable=False),
-    sa.Column('Category', sa.String(length=100), nullable=False),
-    sa.Column('Priority', sa.Enum('Low', 'Medium', 'High', name='priorityenum'), nullable=False),
-    sa.Column('Status', sa.Enum('Submitted', 'Assigned', 'InProgress', 'PendingInfo', 'Resolved', 'Rejected', name='statusenum'), nullable=False),
     sa.Column('StudentId', sa.Integer(), nullable=False),
     sa.Column('StaffId', sa.Integer(), nullable=True),
     sa.Column('DepartmentId', sa.Integer(), nullable=True),
+    sa.Column('Title', sa.String(length=255), nullable=False),
+    sa.Column('Description', sa.Text(), nullable=False),
+    sa.Column('Category', sa.String(length=100), nullable=False),
+    sa.Column('SubCategory', sa.String(length=100), nullable=True),
+    sa.Column('Priority', sa.Enum('High', 'Medium', 'Low', name='priorityenum'), nullable=False),
+    sa.Column('Status', sa.Enum('Submitted', 'Assigned', 'InProgress', 'PendingInfo', 'Resolved', 'Rejected', name='statusenum'), nullable=False),
     sa.Column('CreatedAt', sa.DateTime(), nullable=True),
     sa.Column('UpdatedAt', sa.DateTime(), nullable=True),
     sa.Column('ResolvedAt', sa.DateTime(), nullable=True),
     sa.Column('FeedbackRating', sa.Integer(), nullable=True),
     sa.Column('FeedbackComment', sa.Text(), nullable=True),
-    sa.Column('FeedbackAt', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['DepartmentId'], ['departments.DepartmentId'], name='fk_tickets_department_id'),
     sa.ForeignKeyConstraint(['StaffId'], ['users.UserId'], name='fk_tickets_staff_id'),
     sa.ForeignKeyConstraint(['StudentId'], ['users.UserId'], name='fk_tickets_student_id'),
@@ -96,18 +105,52 @@ def upgrade():
     sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_escalation_ticket_id'),
     sa.PrimaryKeyConstraint('EscalationId')
     )
+    op.create_table('flagged_tickets',
+    sa.Column('Id', sa.Integer(), nullable=False),
+    sa.Column('FlagId', sa.Integer(), nullable=False),
+    sa.Column('TicketId', sa.Integer(), nullable=False),
+    sa.ForeignKeyConstraint(['FlagId'], ['ticket_flags.FlagId'], name='fk_flagged_flag_id'),
+    sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_flagged_ticket_id'),
+    sa.PrimaryKeyConstraint('Id')
+    )
+    op.create_table('reassignment_requests',
+    sa.Column('RequestId', sa.Integer(), nullable=False),
+    sa.Column('TicketId', sa.Integer(), nullable=False),
+    sa.Column('RequestedById', sa.Integer(), nullable=False),
+    sa.Column('TargetStaffId', sa.Integer(), nullable=False),
+    sa.Column('Reason', sa.Text(), nullable=False),
+    sa.Column('Status', sa.String(length=20), nullable=False),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
+    sa.Column('ResolvedAt', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['RequestedById'], ['users.UserId'], name='fk_reassign_req_by'),
+    sa.ForeignKeyConstraint(['TargetStaffId'], ['users.UserId'], name='fk_reassign_req_target'),
+    sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_reassign_req_ticket'),
+    sa.PrimaryKeyConstraint('RequestId')
+    )
+    op.create_table('reopen_requests',
+    sa.Column('RequestId', sa.Integer(), nullable=False),
+    sa.Column('TicketId', sa.Integer(), nullable=False),
+    sa.Column('StudentId', sa.Integer(), nullable=False),
+    sa.Column('Reason', sa.Text(), nullable=False),
+    sa.Column('Status', sa.String(length=20), nullable=False),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
+    sa.Column('ResolvedAt', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['StudentId'], ['users.UserId'], name='fk_reopen_student'),
+    sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_reopen_ticket'),
+    sa.PrimaryKeyConstraint('RequestId')
+    )
     op.create_table('ticket_updates',
     sa.Column('UpdateId', sa.Integer(), nullable=False),
     sa.Column('TicketId', sa.Integer(), nullable=False),
     sa.Column('UserId', sa.Integer(), nullable=False),
+    sa.Column('ParentUpdateId', sa.Integer(), nullable=True),
     sa.Column('Comment', sa.Text(), nullable=False),
     sa.Column('StatusChange', sa.Enum('Submitted', 'Assigned', 'InProgress', 'PendingInfo', 'Resolved', 'Rejected', name='updatestatusenum'), nullable=True),
-    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
     sa.Column('IsReplyThread', sa.Boolean(), nullable=False),
-    sa.Column('ParentUpdateId', sa.Integer(), nullable=True),
-    sa.ForeignKeyConstraint(['ParentUpdateId'], ['ticket_updates.UpdateId'], name='fk_ticket_updates_parent_id'),
-    sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_ticket_updates_ticket_id'),
-    sa.ForeignKeyConstraint(['UserId'], ['users.UserId'], name='fk_ticket_updates_user_id'),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=True),
+    sa.ForeignKeyConstraint(['ParentUpdateId'], ['ticket_updates.UpdateId'], name='fk_updates_parent_id'),
+    sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_updates_ticket_id'),
+    sa.ForeignKeyConstraint(['UserId'], ['users.UserId'], name='fk_updates_user_id'),
     sa.PrimaryKeyConstraint('UpdateId')
     )
     op.create_table('user_notifications',
@@ -142,10 +185,14 @@ def downgrade():
     op.drop_table('attachments')
     op.drop_table('user_notifications')
     op.drop_table('ticket_updates')
+    op.drop_table('reopen_requests')
+    op.drop_table('reassignment_requests')
+    op.drop_table('flagged_tickets')
     op.drop_table('escalation_requests')
     op.drop_table('admin_notifications')
     op.drop_table('tickets')
     op.drop_table('announcements')
     op.drop_table('users')
+    op.drop_table('ticket_flags')
     op.drop_table('departments')
     # ### end Alembic commands ###

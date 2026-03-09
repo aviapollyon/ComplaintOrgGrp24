@@ -314,6 +314,8 @@ def user_detail(user_id):
 @login_required
 @role_required('Admin')
 def tickets():
+    from app.utils.sorting import apply_sort
+
     filter_form = AdminTicketFilterForm(request.args)
     filter_form.department.choices = _dept_choices()
     filter_form.staff.choices      = [(0, 'All Staff')] + [
@@ -336,19 +338,36 @@ def tickets():
             query = query.filter(Ticket.Priority == PriorityEnum(filter_form.priority.data))
         except ValueError:
             pass
+    if filter_form.category.data:
+        query = query.filter(Ticket.Category == filter_form.category.data)
     if filter_form.department.data and filter_form.department.data != 0:
         query = query.filter(Ticket.DepartmentId == filter_form.department.data)
     if filter_form.staff.data and filter_form.staff.data != 0:
         query = query.filter(Ticket.StaffId == filter_form.staff.data)
 
-    tickets_list = query.order_by(Ticket.CreatedAt.desc()).all()
-    return render_template('admin/tickets.html', tickets=tickets_list, filter_form=filter_form)
+    query        = apply_sort(query, filter_form.sort.data or 'newest')
+    tickets_list = query.all()
+    return render_template('admin/tickets.html', tickets=tickets_list,
+                           filter_form=filter_form)
 
 @admin_bp.route('/tickets/<int:ticket_id>')
 @login_required
 @role_required('Admin')
 def ticket_detail(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
+    
+    from app.models.reopen_request       import ReopenRequest
+    from app.models.reassignment_request import ReassignmentRequest
+
+    pending_reopen   = ReopenRequest.query.filter_by(
+        TicketId=ticket_id, Status='Pending'
+    ).first()
+    pending_reassign = ReassignmentRequest.query.filter_by(
+        TicketId=ticket_id, Status='Pending'
+    ).first()
+
+    # add to render_template call:
+
 
     # Auto-dismiss admin notifications for this ticket
     AdminNotification.query.filter_by(
@@ -387,6 +406,8 @@ def ticket_detail(ticket_id):
         force_form=force_form,
         pending_escalation=pending_escalation,
         escalation_form=escalation_form,
+        pending_reopen=pending_reopen,
+        pending_reassign=pending_reassign,
     )
 
 
@@ -791,3 +812,127 @@ def delete_announcement(ann_id):
     db.session.commit()
     flash('Announcement deleted.', 'info')
     return redirect(url_for('admin.announcements'))
+
+# ── REOPEN TICKET ─────────────────────────────────────────────────────────────
+@admin_bp.route('/tickets/<int:ticket_id>/reopen/review', methods=['POST'])
+@login_required
+@role_required('Admin')
+def review_reopen(ticket_id):
+    from app.models.reopen_request import ReopenRequest
+    from app.services.notifications import notify_ticket_reopened
+
+    ticket = Ticket.query.get_or_404(ticket_id)
+    reopen = ReopenRequest.query.filter_by(
+        TicketId=ticket_id, Status='Pending'
+    ).first_or_404()
+
+    action = request.form.get('action')
+
+    if action == 'approve':
+        # Return ticket to the last assigned staff member
+        last_staff_id = ticket.StaffId
+
+        # Overwrite resolved timestamps
+        ticket.Status     = StatusEnum.InProgress
+        ticket.ResolvedAt = None
+        ticket.UpdatedAt  = datetime.utcnow()
+
+        reopen.Status     = 'Approved'
+        reopen.ResolvedAt = datetime.utcnow()
+
+        db.session.add(TicketUpdate(
+            TicketId      = ticket_id,
+            UserId        = current_user.UserId,
+            Comment       = ('[ADMIN] Reopen request approved. '
+                             'Ticket returned to assigned staff for further investigation.'),
+            StatusChange  = UpdateStatusEnum.InProgress,
+            IsReplyThread = False,
+        ))
+        notify_ticket_reopened(ticket, current_user)
+        db.session.commit()
+        flash('Ticket reopened and returned to staff.', 'success')
+
+    elif action == 'reject':
+        reopen.Status     = 'Rejected'
+        reopen.ResolvedAt = datetime.utcnow()
+
+        db.session.add(TicketUpdate(
+            TicketId      = ticket_id,
+            UserId        = current_user.UserId,
+            Comment       = '[ADMIN] Reopen request rejected.',
+            IsReplyThread = False,
+        ))
+        db.session.commit()
+        flash('Reopen request rejected.', 'info')
+    else:
+        flash('Invalid action.', 'danger')
+
+    return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
+
+
+# ── REASSIGNMENT REQUEST REVIEW ───────────────────────────────────────────────
+@admin_bp.route('/tickets/<int:ticket_id>/reassignment/review', methods=['POST'])
+@login_required
+@role_required('Admin')
+def review_reassignment(ticket_id):
+    from app.models.reassignment_request import ReassignmentRequest
+    from app.services.notifications import notify_reassignment_approved
+
+    ticket  = Ticket.query.get_or_404(ticket_id)
+    req     = ReassignmentRequest.query.filter_by(
+        TicketId=ticket_id, Status='Pending'
+    ).first_or_404()
+    action  = request.form.get('action')
+    old_staff = ticket.staff
+
+    if action == 'approve':
+        new_staff        = User.query.get_or_404(req.TargetStaffId)
+        ticket.StaffId   = new_staff.UserId
+        ticket.Status    = StatusEnum.Assigned
+        ticket.UpdatedAt = datetime.utcnow()
+
+        req.Status     = 'Approved'
+        req.ResolvedAt = datetime.utcnow()
+
+        db.session.add(TicketUpdate(
+            TicketId      = ticket_id,
+            UserId        = current_user.UserId,
+            Comment       = (f'[ADMIN] Reassignment approved. '
+                             f'Ticket moved from {old_staff.FullName if old_staff else "Unassigned"} '
+                             f'to {new_staff.FullName}.'),
+            StatusChange  = UpdateStatusEnum.Assigned,
+            IsReplyThread = False,
+        ))
+        notify_reassignment_approved(ticket, new_staff, old_staff)
+        db.session.commit()
+        flash(f'Ticket reassigned to {new_staff.FullName}.', 'success')
+
+    elif action == 'reject':
+        req.Status     = 'Rejected'
+        req.ResolvedAt = datetime.utcnow()
+
+        db.session.add(TicketUpdate(
+            TicketId      = ticket_id,
+            UserId        = current_user.UserId,
+            Comment       = '[ADMIN] Reassignment request rejected.',
+            IsReplyThread = False,
+        ))
+        db.session.commit()
+        flash('Reassignment request rejected.', 'info')
+    else:
+        flash('Invalid action.', 'danger')
+
+    return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
+
+
+# ── DISMISS FLAG ──────────────────────────────────────────────────────────────
+@admin_bp.route('/flags/<int:flag_id>/dismiss', methods=['POST'])
+@login_required
+@role_required('Admin')
+def dismiss_flag(flag_id):
+    from app.models.ticket_flag import TicketFlag
+    flag = TicketFlag.query.get_or_404(flag_id)
+    flag.Status = 'dismissed'
+    db.session.commit()
+    flash(f'Flag for "{flag.Category} / {flag.Keyword}" dismissed.', 'info')
+    return redirect(url_for('admin.dashboard'))

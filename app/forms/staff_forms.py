@@ -1,6 +1,7 @@
 from flask_wtf import FlaskForm
 from wtforms import TextAreaField, SelectField, SubmitField, StringField
 from wtforms.validators import DataRequired, Length, Optional
+from app.utils.helpers import TICKET_CATEGORIES
 
 STATUS_CHOICES = [
     ('In Progress', 'In Progress'),
@@ -23,26 +24,24 @@ FILTER_PRIORITY_CHOICES = [
     ('Low',    'Low'),
 ]
 
-FILTER_CATEGORY_CHOICES = [
-    ('', 'All Categories'),
-    ('Academic',       'Academic'),
-    ('Financial',      'Financial'),
-    ('Facilities',     'Facilities'),
-    ('IT Support',     'IT Support'),
-    ('Accommodation',  'Accommodation'),
-    ('Administration', 'Administration'),
-    ('Other',          'Other'),
+SORT_CHOICES = [
+    ('newest',   'Newest First'),
+    ('oldest',   'Oldest First'),
+    ('priority', 'Priority (High → Low)'),
+    ('title',    'Title (A–Z)'),
+    ('id_asc',   'Ticket # ↑'),
+    ('id_desc',  'Ticket # ↓'),
 ]
 
 
 class UpdateTicketForm(FlaskForm):
-    status = SelectField('New Status', choices=STATUS_CHOICES,
-                         validators=[DataRequired()])
+    status  = SelectField('New Status', choices=STATUS_CHOICES,
+                          validators=[DataRequired()])
     comment = TextAreaField('Comment / Notes',
                             validators=[DataRequired(), Length(min=5, max=2000)],
                             render_kw={"rows": 4,
                                        "placeholder": "Describe the action taken..."})
-    submit = SubmitField('Update Ticket')
+    submit  = SubmitField('Update Ticket')
 
 
 class ResolveTicketForm(FlaskForm):
@@ -74,17 +73,29 @@ class EscalationRequestForm(FlaskForm):
                               validators=[DataRequired()])
     reason      = TextAreaField('Reason for Escalation',
                                 validators=[DataRequired(), Length(min=10, max=1000)],
-                                render_kw={"rows": 4,
-                                           "placeholder": "Explain why this ticket needs to be escalated..."})
+                                render_kw={"rows": 4})
     submit = SubmitField('Request Escalation')
+
+
+class StaffReassignmentRequestForm(FlaskForm):
+    target_staff = SelectField('Reassign To', coerce=int,
+                               validators=[DataRequired()])
+    reason       = TextAreaField('Reason for Reassignment',
+                                 validators=[DataRequired(), Length(min=10, max=1000)],
+                                 render_kw={"rows": 3})
+    submit = SubmitField('Request Reassignment')
 
 
 class StaffTicketFilterForm(FlaskForm):
     class Meta:
         csrf = False
-
     status   = SelectField('Status',   choices=FILTER_STATUS_CHOICES,   validators=[Optional()])
     priority = SelectField('Priority', choices=FILTER_PRIORITY_CHOICES, validators=[Optional()])
-    category = SelectField('Category', choices=FILTER_CATEGORY_CHOICES, validators=[Optional()])
-    search   = StringField('Search',   validators=[Optional()],
+    category = SelectField(
+        'Category',
+        choices=[('', 'All Categories')] + [(c, c) for c in TICKET_CATEGORIES],
+        validators=[Optional()]
+    )
+    search   = StringField('Search', validators=[Optional()],
                            render_kw={"placeholder": "Search title..."})
+    sort     = SelectField('Sort By', choices=SORT_CHOICES, validators=[Optional()])

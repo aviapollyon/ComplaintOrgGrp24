@@ -1,4 +1,4 @@
-from app import db, login_manager
+from app import db
 from flask_login import UserMixin
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
@@ -16,48 +16,46 @@ class User(UserMixin, db.Model):
 
     UserId       = db.Column(db.Integer, primary_key=True)
     FullName     = db.Column(db.String(150), nullable=False)
-    Email        = db.Column(db.String(150), unique=True, nullable=False)
+    Email        = db.Column(db.String(150), nullable=False, unique=True)
     PasswordHash = db.Column(db.String(256), nullable=False)
-    Role         = db.Column(db.Enum(RoleEnum), nullable=False, default=RoleEnum.Student)
-    IsActive     = db.Column(db.Boolean, default=True, nullable=False)
-
+    Role         = db.Column(db.Enum(RoleEnum), nullable=False,
+                             default=RoleEnum.Student)
     DepartmentId = db.Column(
         db.Integer,
         db.ForeignKey('departments.DepartmentId', name='fk_users_department_id'),
         nullable=True
     )
-
+    IsActive  = db.Column(db.Boolean, default=True,  nullable=False)
     CreatedAt = db.Column(db.DateTime, default=datetime.utcnow)
-    UpdatedAt = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    UpdatedAt = db.Column(db.DateTime, default=datetime.utcnow,
+                          onupdate=datetime.utcnow)
 
+    # ── Relationships — all back_populates; NO backref= ───────────────────────
     submitted_tickets = db.relationship(
-        'Ticket', foreign_keys='Ticket.StudentId',
-        backref='student', lazy='dynamic'
+        'Ticket',
+        back_populates='student',
+        foreign_keys='Ticket.StudentId',
+        lazy='dynamic'
     )
     assigned_tickets = db.relationship(
-        'Ticket', foreign_keys='Ticket.StaffId',
-        backref='staff', lazy='dynamic'
+        'Ticket',
+        back_populates='staff',
+        foreign_keys='Ticket.StaffId',
+        lazy='dynamic'
     )
-    ticket_updates = db.relationship('TicketUpdate', backref='author', lazy='dynamic')
+    department = db.relationship(
+        'Department',
+        foreign_keys=[DepartmentId]
+    )
 
     def get_id(self):
         return str(self.UserId)
 
-    def set_password(self, password):
+    def set_password(self, password: str):
         self.PasswordHash = generate_password_hash(password)
 
-    def check_password(self, password):
+    def check_password(self, password: str) -> bool:
         return check_password_hash(self.PasswordHash, password)
-
-    # Flask-Login — deactivated users cannot log in
-    @property
-    def is_active(self):
-        return self.IsActive
 
     def __repr__(self):
         return f'<User {self.Email} [{self.Role.value}]>'
-
-
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))

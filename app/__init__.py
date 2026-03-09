@@ -11,8 +11,8 @@ migrate       = Migrate()
 login_manager = LoginManager()
 csrf          = CSRFProtect()
 
-login_manager.login_view             = 'auth.login'
-login_manager.login_message_category = 'info'
+login_manager.login_view              = 'auth.login'
+login_manager.login_message_category  = 'info'
 
 
 def create_app(config_name='default'):
@@ -28,57 +28,65 @@ def create_app(config_name='default'):
     login_manager.init_app(app)
     csrf.init_app(app)
 
+    # ── User loader — required by Flask-Login ─────────────────────────────────
+    from app.models.user import User
+
+    @login_manager.user_loader
+    def load_user(user_id: str):
+        return User.query.get(int(user_id))
+
+    # ── Context processor ─────────────────────────────────────────────────────
     @app.context_processor
     def inject_globals():
         from app.utils.helpers import attachment_url
         from flask_login import current_user
 
-        active_announcements   = []
-        admin_unread_count     = 0
-        user_unread_count      = 0
+        active_announcements = []
+        admin_unread_count   = 0
+        user_unread_count    = 0
 
         if current_user.is_authenticated:
-            from app.models.announcement      import Announcement
+            from app.models.announcement       import Announcement
             from app.models.admin_notification import AdminNotification
             from app.models.user_notification  import UserNotification
 
             role = current_user.Role.value
 
-            # Announcements for this role
             active_announcements = Announcement.query.filter(
                 Announcement.IsActive == True,          # noqa: E712
                 Announcement.TargetAudience.in_(['All', role])
             ).order_by(Announcement.CreatedAt.desc()).all()
 
-            # Admin bell count
             if role == 'Admin':
-                admin_unread_count = AdminNotification.query.filter_by(IsRead=False).count()
+                admin_unread_count = AdminNotification.query.filter_by(
+                    IsRead=False
+                ).count()
 
-            # Per-user notification count (all roles)
             user_unread_count = UserNotification.query.filter_by(
                 UserId=current_user.UserId, IsRead=False
             ).count()
 
         return {
-            'now'                  : datetime.utcnow(),
-            'attachment_url'       : attachment_url,
-            'active_announcements' : active_announcements,
-            'admin_unread_count'   : admin_unread_count,
-            'user_unread_count'    : user_unread_count,
+            'now'                 : datetime.utcnow(),
+            'attachment_url'      : attachment_url,
+            'active_announcements': active_announcements,
+            'admin_unread_count'  : admin_unread_count,
+            'user_unread_count'   : user_unread_count,
         }
 
-    from app.routes.auth    import auth_bp
-    from app.routes.student import student_bp
-    from app.routes.staff   import staff_bp
-    from app.routes.admin   import admin_bp
+    # ── Blueprints ────────────────────────────────────────────────────────────
+    from app.routes.auth          import auth_bp
+    from app.routes.student       import student_bp
+    from app.routes.staff         import staff_bp
+    from app.routes.admin         import admin_bp
     from app.routes.notifications import notif_bp
-    
-    app.register_blueprint(notif_bp, url_prefix='/user')
+
     app.register_blueprint(auth_bp)
     app.register_blueprint(student_bp, url_prefix='/student')
     app.register_blueprint(staff_bp,   url_prefix='/staff')
     app.register_blueprint(admin_bp,   url_prefix='/admin')
+    app.register_blueprint(notif_bp,   url_prefix='/user')
 
-    from app import models  # noqa: F401
+    from app import models  # noqa: F401 — ensure all models are registered
 
     return app
