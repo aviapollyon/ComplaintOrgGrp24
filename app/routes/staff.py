@@ -54,6 +54,8 @@ def dashboard():
             pass
     if filter_form.category.data:
         query = query.filter(Ticket.Category == filter_form.category.data)
+    if filter_form.sub_category.data:
+        query = query.filter(Ticket.SubCategory == filter_form.sub_category.data)
     if filter_form.search.data:
         s = filter_form.search.data.strip()
         from app import db as _db
@@ -65,7 +67,14 @@ def dashboard():
         )
 
     query    = apply_sort(query, filter_form.sort.data or 'newest')
-    tickets  = query.all()
+    page     = request.args.get('page', 1, type=int)
+    from flask import current_app
+    try:
+        per_page = int(filter_form.per_page.data or current_app.config.get('TICKETS_PER_PAGE', 15))
+    except (ValueError, TypeError):
+        per_page = current_app.config.get('TICKETS_PER_PAGE', 15)
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    tickets    = pagination.items
 
     all_assigned = Ticket.query.filter_by(StaffId=current_user.UserId).all()
     resolved_t   = [t for t in all_assigned
@@ -124,6 +133,7 @@ def dashboard():
     return render_template(
         'staff/dashboard.html',
         tickets=tickets,
+        pagination=pagination,
         filter_form=filter_form,
         stats=stats,
         flagged_ticket_ids=flagged_ids,
@@ -354,6 +364,14 @@ def request_escalation(ticket_id):
         ))
         ticket.UpdatedAt = datetime.utcnow()
         db.session.commit()
+        from app.services.notifications import _send_admin_emails
+        _send_admin_emails(
+            f'Escalation Request — Ticket #{ticket_id}',
+            (f'{current_user.FullName} has requested escalation of ticket '
+             f'"#{ticket_id} {ticket.Title}" to {target_dept.Name}.\n\n'
+             f'Reason: {form.reason.data.strip()}\n\n'
+             f'Review it at: /admin/tickets/{ticket_id}'),
+        )
         flash('Escalation request submitted.', 'success')
     else:
         flash('Please fill in all escalation fields.', 'danger')
@@ -407,6 +425,14 @@ def request_reassignment(ticket_id):
         ))
         ticket.UpdatedAt = datetime.utcnow()
         db.session.commit()
+        from app.services.notifications import _send_admin_emails
+        _send_admin_emails(
+            f'Reassignment Request — Ticket #{ticket_id}',
+            (f'{current_user.FullName} has requested reassignment of ticket '
+             f'"#{ticket_id} {ticket.Title}" to {target.FullName}.\n\n'
+             f'Reason: {form.reason.data.strip()}\n\n'
+             f'Review it at: /admin/tickets/{ticket_id}'),
+        )
         flash('Reassignment request submitted to admin.', 'success')
     else:
         flash('Please fill in all reassignment fields.', 'danger')

@@ -1,0 +1,44 @@
+{% macro render_pagination(pagination) %}
+{% if pagination and pagination.pages > 1 %}
+<nav aria-label="Page navigation" class="mt-4">
+  <ul class="pagination pagination-sm justify-content-center flex-wrap">
+
+    {# Preserve all current GET params except 'page' #}
+    {% set args = request.args.to_dict() %}
+
+    {# Previous #}
+    <li class="page-item {{ 'disabled' if not pagination.has_prev }}">
+      {% set _ = args.update({'page': pagination.prev_num}) %}
+      <a class="page-link" href="{{ request.path }}?{{ args | urlencode }}" aria-label="Previous">
+        <span aria-hidden="true">&laquo;</span>
+      </a>
+    </li>
+
+    {# Page numbers — show a window of ±2 around current page #}
+    {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+      {% if p %}
+        {% set _ = args.update({'page': p}) %}
+        <li class="page-item {{ 'active' if p == pagination.page }}">
+          <a class="page-link" href="{{ request.path }}?{{ args | urlencode }}">{{ p }}</a>
+        </li>
+      {% else %}
+        <li class="page-item disabled"><span class="page-link">&hellip;</span></li>
+      {% endif %}
+    {% endfor %}
+
+    {# Next #}
+    <li class="page-item {{ 'disabled' if not pagination.has_next }}">
+      {% set _ = args.update({'page': pagination.next_num}) %}
+      <a class="page-link" href="{{ request.path }}?{{ args | urlencode }}" aria-label="Next">
+        <span aria-hidden="true">&raquo;</span>
+      </a>
+    </li>
+
+  </ul>
+  <p class="text-center text-muted small mt-1">
+    Page {{ pagination.page }} of {{ pagination.pages }}
+    &nbsp;&mdash;&nbsp;{{ pagination.total }} total record{{ 's' if pagination.total != 1 }}
+  </p>
+</nav>
+{% endif %}
+{% endmacro %}

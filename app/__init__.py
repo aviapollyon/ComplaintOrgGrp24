@@ -3,6 +3,7 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_login import LoginManager
 from flask_wtf.csrf import CSRFProtect
+from flask_mail import Mail
 from datetime import datetime
 from config import config
 
@@ -10,6 +11,7 @@ db            = SQLAlchemy()
 migrate       = Migrate()
 login_manager = LoginManager()
 csrf          = CSRFProtect()
+mail          = Mail()
 
 login_manager.login_view              = 'auth.login'
 login_manager.login_message_category  = 'info'
@@ -27,6 +29,7 @@ def create_app(config_name='default'):
     migrate.init_app(app, db)
     login_manager.init_app(app)
     csrf.init_app(app)
+    mail.init_app(app)
 
     # ── User loader — required by Flask-Login ─────────────────────────────────
     from app.models.user import User

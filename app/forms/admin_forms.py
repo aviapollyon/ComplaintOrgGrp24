@@ -4,7 +4,10 @@ from wtforms import (
     TextAreaField, PasswordField
 )
 from wtforms.validators import DataRequired, Email, Length, Optional, EqualTo
-from app.utils.helpers import TICKET_CATEGORIES
+from app.utils.helpers import TICKET_CATEGORIES, CATEGORY_SUBCATEGORY_MAP
+
+_all_subs = sorted({s for subs in CATEGORY_SUBCATEGORY_MAP.values() for s in subs})
+SUBCATEGORY_FILTER_CHOICES = [('', 'All Sub-Categories')] + [(s, s) for s in _all_subs]
 
 ROLE_CHOICES = [
     ('Student', 'Student'),
@@ -32,12 +35,13 @@ PRIORITY_CHOICES = [
     ('Low',    'Low'),
 ]
 SORT_CHOICES = [
-    ('newest',   'Newest First'),
-    ('oldest',   'Oldest First'),
-    ('priority', 'Priority (High → Low)'),
-    ('title',    'Title (A–Z)'),
-    ('id_asc',   'Ticket # ↑'),
-    ('id_desc',  'Ticket # ↓'),
+    ('newest',      'Newest First'),
+    ('oldest',      'Oldest First'),
+    ('priority',    'Priority (High → Low)'),
+    ('subcategory', 'Sub-Category (A–Z)'),
+    ('title',       'Title (A–Z)'),
+    ('id_asc',      'Ticket # ↑'),
+    ('id_desc',     'Ticket # ↓'),
 ]
 
 
@@ -63,17 +67,25 @@ class EditUserForm(FlaskForm):
 class AdminTicketFilterForm(FlaskForm):
     class Meta:
         csrf = False
-    search     = StringField('Search',     validators=[Optional()])
-    status     = SelectField('Status',     choices=STATUS_CHOICES,   validators=[Optional()])
-    priority   = SelectField('Priority',   choices=PRIORITY_CHOICES, validators=[Optional()])
-    category   = SelectField(
+    search       = StringField('Search',       validators=[Optional()])
+    status       = SelectField('Status',       choices=STATUS_CHOICES,   validators=[Optional()])
+    priority     = SelectField('Priority',     choices=PRIORITY_CHOICES, validators=[Optional()])
+    category     = SelectField(
         'Category',
         choices=[('', 'All Categories')] + [(c, c) for c in TICKET_CATEGORIES],
         validators=[Optional()]
     )
-    department = SelectField('Department', coerce=int, validators=[Optional()])
-    staff      = SelectField('Staff',      coerce=int, validators=[Optional()])
-    sort       = SelectField('Sort By',    choices=SORT_CHOICES, validators=[Optional()])
+    sub_category = SelectField(
+        'Sub-Category',
+        choices=SUBCATEGORY_FILTER_CHOICES,
+        validators=[Optional()]
+    )
+    department   = SelectField('Department', coerce=int, validators=[Optional()])
+    staff        = SelectField('Staff',      coerce=int, validators=[Optional()])
+    sort         = SelectField('Sort By',    choices=SORT_CHOICES, validators=[Optional()])
+    per_page     = SelectField('Per Page',
+                               choices=[('10','10'),('15','15'),('25','25'),('50','50'),('100','100')],
+                               default='15', validators=[Optional()])
 
 
 class AdminUserFilterForm(FlaskForm):
@@ -84,6 +96,9 @@ class AdminUserFilterForm(FlaskForm):
                              choices=[('', 'All Roles')] + ROLE_CHOICES,
                              validators=[Optional()])
     department = SelectField('Department', coerce=int, validators=[Optional()])
+    per_page   = SelectField('Per Page',
+                             choices=[('10','10'),('20','20'),('25','25'),('50','50'),('100','100')],
+                             default='20', validators=[Optional()])
 
 
 class ReassignTicketForm(FlaskForm):

@@ -135,17 +135,17 @@ with app.app_context():
     admin_dept = dept_map['Student Administration']
 
     # ── 2. Admin ──────────────────────────────────────────────────────────────
-    admin_user = User.query.filter_by(Email='admin@dut.ac.za').first()
+    admin_user = User.query.filter_by(Email='aviapollyonc@gmail.com').first()
     if not admin_user:
         admin_user = make_user(
-            'System Admin', 'admin@dut.ac.za', 'Admin@1234',
+            'System Admin', 'aviapollyonc@gmail.com', 'Admin@1234',
             RoleEnum.Admin, None
         )
         db.session.flush()
 
     # ── 3. Staff ──────────────────────────────────────────────────────────────
     staff_data = [
-        ('Sipho Nkosi',    'sipho.nkosi@dut.ac.za',    'Staff@1234', academic),
+        ('Sipho Nkosi',    'aviapollyon@gmail.com',    'Staff@1234', academic),
         ('Priya Pillay',   'priya.pillay@dut.ac.za',   'Staff@1234', academic),
         ('James Mokoena',  'james.mokoena@dut.ac.za',  'Staff@1234', finance),
         ('Fatima Dlamini', 'fatima.dlamini@dut.ac.za', 'Staff@1234', finance),
@@ -163,7 +163,7 @@ with app.app_context():
             db.session.flush()
         staff_users[email] = u
 
-    sipho  = staff_users['sipho.nkosi@dut.ac.za']
+    sipho  = staff_users['aviapollyon@gmail.com']
     priya  = staff_users['priya.pillay@dut.ac.za']
     james  = staff_users['james.mokoena@dut.ac.za']
     fatima = staff_users['fatima.dlamini@dut.ac.za']
@@ -175,7 +175,7 @@ with app.app_context():
 
     # ── 4. Students ───────────────────────────────────────────────────────────
     student_data = [
-        ('Ayanda Mthembu',  'ayanda.mthembu@student.dut.ac.za',  'Student@1234'),
+        ('Ayanda Mthembu',  '22218367@dut4life.ac.za',  'Student@1234'),
         ('Keegan Peters',   'keegan.peters@student.dut.ac.za',   'Student@1234'),
         ('Zanele Ntuli',    'zanele.ntuli@student.dut.ac.za',    'Student@1234'),
         ('Rishi Naidoo',    'rishi.naidoo@student.dut.ac.za',    'Student@1234'),
@@ -192,7 +192,7 @@ with app.app_context():
             db.session.flush()
         student_users[email] = u
 
-    ayanda   = student_users['ayanda.mthembu@student.dut.ac.za']
+    ayanda   = student_users['22218367@dut4life.ac.za']
     keegan   = student_users['keegan.peters@student.dut.ac.za']
     zanele   = student_users['zanele.ntuli@student.dut.ac.za']
     rishi    = student_users['rishi.naidoo@student.dut.ac.za']

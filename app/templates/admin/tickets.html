@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "macros/pagination.html" import render_pagination %}
 {% block title %}All Tickets — Admin{% endblock %}
 {% block content %}
 
@@ -64,6 +65,15 @@
         </select>
       </div>
       <div class="col-md-2">
+        <label class="form-label small fw-semibold">Sub-Category</label>
+        <select name="sub_category" class="form-select form-select-sm">
+          {% for value, label in filter_form.sub_category.choices %}
+            <option value="{{ value }}"
+              {% if filter_form.sub_category.data == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
         <label class="form-label small fw-semibold">Sort By</label>
         <select name="sort" class="form-select form-select-sm">
           {% for value, label in filter_form.sort.choices %}
@@ -73,7 +83,16 @@
         </select>
       </div>
       <div class="col-md-1">
-        <button type="submit" class="btn btn-primary btn-sm w-100">
+        <label class="form-label small fw-semibold">Per Page</label>
+        <select name="per_page" class="form-select form-select-sm">
+          {% for value, label in filter_form.per_page.choices %}
+            <option value="{{ value }}"
+              {% if (filter_form.per_page.data or '15') == value %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-1">
+        <button type="submit" class="btn btn-primary btn-sm w-100" style="margin-top:1.6rem;">
           <i class="bi bi-funnel"></i>
         </button>
       </div>
@@ -137,4 +156,5 @@
     </table>
   </div>
 </div>
+{{ render_pagination(pagination) }}
 {% endblock %}

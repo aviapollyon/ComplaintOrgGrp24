@@ -49,6 +49,8 @@ def dashboard():
             pass
     if filter_form.category.data:
         query = query.filter(Ticket.Category == filter_form.category.data)
+    if filter_form.sub_category.data:
+        query = query.filter(Ticket.SubCategory == filter_form.sub_category.data)
     if filter_form.search.data:
         s = filter_form.search.data.strip()
         query = query.filter(
@@ -59,7 +61,13 @@ def dashboard():
         )
 
     query       = apply_sort(query, filter_form.sort.data or 'newest')
-    tickets     = query.all()
+    page        = request.args.get('page', 1, type=int)
+    try:
+        per_page = int(filter_form.per_page.data or current_app.config.get('TICKETS_PER_PAGE', 15))
+    except (ValueError, TypeError):
+        per_page = current_app.config.get('TICKETS_PER_PAGE', 15)
+    pagination  = query.paginate(page=page, per_page=per_page, error_out=False)
+    tickets     = pagination.items
     all_tickets = Ticket.query.filter_by(StudentId=current_user.UserId).all()
 
     stats = {
@@ -75,7 +83,7 @@ def dashboard():
 
     return render_template(
         'student/dashboard.html',
-        tickets=tickets, filter_form=filter_form, stats=stats
+        tickets=tickets, pagination=pagination, filter_form=filter_form, stats=stats
     )
 
 
@@ -173,7 +181,7 @@ def submit_ticket():
         db.session.commit()
         flash(
             f'Your complaint has been submitted. '
-            f'Tracking reference: <strong>{ticket.TrackingRef}</strong>. '
+            f'Tracking reference: {ticket.TrackingRef}. '
             f'A confirmation notification has been sent to you.',
             'success'
         )
@@ -387,6 +395,14 @@ def request_reopen(ticket_id):
         ))
         ticket.UpdatedAt = datetime.utcnow()
         db.session.commit()
+        from app.services.notifications import _send_admin_emails
+        _send_admin_emails(
+            f'Reopen Request — Ticket #{ticket_id}',
+            (f'Student {current_user.FullName} has requested reopening of ticket '
+             f'"#{ticket_id} {ticket.Title}".\n\n'
+             f'Reason: {form.reason.data.strip()}\n\n'
+             f'Review it at: /admin/tickets/{ticket_id}'),
+        )
         flash('Reopen request submitted. Admin will review it shortly.', 'success')
     else:
         flash('Please provide a reason for reopening.', 'danger')

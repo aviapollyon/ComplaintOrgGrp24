@@ -30,5 +30,7 @@ def apply_sort(query, sort_value: str):
         return query.order_by(Ticket.TicketId.asc())
     elif sort_value == 'id_desc':
         return query.order_by(Ticket.TicketId.desc())
+    elif sort_value == 'subcategory':
+        return query.order_by(Ticket.SubCategory.asc(), Ticket.CreatedAt.desc())
     else:  # 'newest' is default
         return query.order_by(Ticket.UpdatedAt.desc())

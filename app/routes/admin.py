@@ -8,7 +8,7 @@ import io
 from datetime import datetime
 from flask import (
     Blueprint, render_template, redirect, url_for,
-    flash, request, abort, Response
+    flash, request, abort, Response, current_app
 )
 from flask_login import login_required, current_user
 from app import db
@@ -166,8 +166,14 @@ def users():
         query = query.filter(User.DepartmentId == filter_form.department.data)
 
     # Execute the query, sorting by name alphabetically
-    users_list = query.order_by(User.FullName).all()
-    return render_template('admin/users.html', users=users_list, filter_form=filter_form)
+    page       = request.args.get('page', 1, type=int)
+    try:
+        per_page = int(filter_form.per_page.data or current_app.config.get('USERS_PER_PAGE', 20))
+    except (ValueError, TypeError):
+        per_page = current_app.config.get('USERS_PER_PAGE', 20)
+    pagination = query.order_by(User.FullName).paginate(page=page, per_page=per_page, error_out=False)
+    users_list = pagination.items
+    return render_template('admin/users.html', users=users_list, pagination=pagination, filter_form=filter_form)
 
 
 # Add User route: form to manually create a new user account.
@@ -345,14 +351,23 @@ def tickets():
             pass
     if filter_form.category.data:
         query = query.filter(Ticket.Category == filter_form.category.data)
+    if filter_form.sub_category.data:
+        query = query.filter(Ticket.SubCategory == filter_form.sub_category.data)
     if filter_form.department.data and filter_form.department.data != 0:
         query = query.filter(Ticket.DepartmentId == filter_form.department.data)
     if filter_form.staff.data and filter_form.staff.data != 0:
         query = query.filter(Ticket.StaffId == filter_form.staff.data)
 
     query        = apply_sort(query, filter_form.sort.data or 'newest')
-    tickets_list = query.all()
+    page         = request.args.get('page', 1, type=int)
+    try:
+        per_page = int(filter_form.per_page.data or current_app.config.get('TICKETS_PER_PAGE', 15))
+    except (ValueError, TypeError):
+        per_page = current_app.config.get('TICKETS_PER_PAGE', 15)
+    pagination   = query.paginate(page=page, per_page=per_page, error_out=False)
+    tickets_list = pagination.items
     return render_template('admin/tickets.html', tickets=tickets_list,
+                           pagination=pagination,
                            filter_form=filter_form)
 
 @admin_bp.route('/tickets/<int:ticket_id>')
@@ -594,6 +609,11 @@ def review_escalation(ticket_id):
             IsReplyThread = False,
         ))
         db.session.commit()
+        from app.services.notifications import notify_escalation_rejected
+        requesting_staff = User.query.get(escalation.RequestedById)
+        if requesting_staff:
+            notify_escalation_rejected(ticket, requesting_staff)
+            db.session.commit()
         flash('Escalation request rejected.', 'info')
     else:
         flash('Invalid escalation action.', 'danger')
@@ -906,6 +926,9 @@ def review_reopen(ticket_id):
             IsReplyThread = False,
         ))
         db.session.commit()
+        from app.services.notifications import notify_reopen_rejected
+        notify_reopen_rejected(ticket)
+        db.session.commit()
         flash('Reopen request rejected.', 'info')
     else:
         flash('Invalid action.', 'danger')
@@ -961,6 +984,11 @@ def review_reassignment(ticket_id):
             IsReplyThread = False,
         ))
         db.session.commit()
+        from app.services.notifications import notify_reassignment_rejected
+        requesting_staff = User.query.get(req.RequestedById)
+        if requesting_staff:
+            notify_reassignment_rejected(ticket, requesting_staff)
+            db.session.commit()
         flash('Reassignment request rejected.', 'info')
     else:
         flash('Invalid action.', 'danger')

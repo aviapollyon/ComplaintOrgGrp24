@@ -9,6 +9,9 @@ from app.utils.helpers import TICKET_CATEGORIES, CATEGORY_SUBCATEGORY_MAP
 
 CATEGORY_CHOICES = [('', '— Select Category —')] + [(c, c) for c in TICKET_CATEGORIES]
 
+_all_subs = sorted({s for subs in CATEGORY_SUBCATEGORY_MAP.values() for s in subs})
+SUBCATEGORY_FILTER_CHOICES = [('', 'All Sub-Categories')] + [(s, s) for s in _all_subs]
+
 ALLOWED_EXT = ['pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx']
 
 STATUS_FILTER_CHOICES = [
@@ -22,12 +25,13 @@ STATUS_FILTER_CHOICES = [
 ]
 
 SORT_CHOICES = [
-    ('newest',   'Newest First'),
-    ('oldest',   'Oldest First'),
-    ('priority', 'Priority (High → Low)'),
-    ('title',    'Title (A–Z)'),
-    ('id_asc',   'Ticket # (Low → High)'),
-    ('id_desc',  'Ticket # (High → Low)'),
+    ('newest',      'Newest First'),
+    ('oldest',      'Oldest First'),
+    ('priority',    'Priority (High → Low)'),
+    ('subcategory', 'Sub-Category (A–Z)'),
+    ('title',       'Title (A–Z)'),
+    ('id_asc',      'Ticket # (Low → High)'),
+    ('id_desc',     'Ticket # (High → Low)'),
 ]
 
 
@@ -102,16 +106,24 @@ PRIORITY_FILTER_CHOICES = [
 class TicketFilterForm(FlaskForm):
     class Meta:
         csrf = False
-    status   = SelectField('Status',   choices=STATUS_FILTER_CHOICES, validators=[Optional()])
-    priority = SelectField('Priority', choices=PRIORITY_FILTER_CHOICES, validators=[Optional()])
-    category = SelectField(
+    status       = SelectField('Status',       choices=STATUS_FILTER_CHOICES,      validators=[Optional()])
+    priority     = SelectField('Priority',     choices=PRIORITY_FILTER_CHOICES,    validators=[Optional()])
+    category     = SelectField(
         'Category',
         choices=[('', 'All Categories')] + [(c, c) for c in TICKET_CATEGORIES],
         validators=[Optional()]
     )
-    search   = StringField('Search', validators=[Optional()],
-                           render_kw={"placeholder": "Search title or ref..."})
-    sort     = SelectField('Sort By', choices=SORT_CHOICES, validators=[Optional()])
+    sub_category = SelectField(
+        'Sub-Category',
+        choices=SUBCATEGORY_FILTER_CHOICES,
+        validators=[Optional()]
+    )
+    search       = StringField('Search', validators=[Optional()],
+                               render_kw={"placeholder": "Search title or ref..."})
+    sort         = SelectField('Sort By', choices=SORT_CHOICES, validators=[Optional()])
+    per_page     = SelectField('Per Page',
+                               choices=[('10','10'),('15','15'),('25','25'),('50','50'),('100','100')],
+                               default='15', validators=[Optional()])
 
 
 class StudentReplyForm(FlaskForm):
