@@ -36,8 +36,8 @@
             <div class="form-text">Admins are created directly by the system administrator.</div>
           </div>
 
-          <!-- Department — required for Staff, optional label for Student -->
-          <div class="mb-4" id="departmentGroup">
+          <!-- Department — only shown / required for Staff -->
+          <div class="mb-4 d-none" id="departmentGroup">
             <label class="form-label">
               Department
               <span id="deptRequiredBadge" class="badge bg-danger ms-1 d-none">Required for Staff</span>
@@ -69,13 +69,16 @@
 {% block extra_scripts %}
 <script>
   const roleSelect   = document.getElementById('roleSelect');
+  const deptGroup    = document.getElementById('departmentGroup');
   const badge        = document.getElementById('deptRequiredBadge');
   const deptSelect   = document.getElementById('departmentSelect');
 
   roleSelect.addEventListener('change', () => {
     const isStaff = roleSelect.value === 'Staff';
+    deptGroup.classList.toggle('d-none', !isStaff);
     badge.classList.toggle('d-none', !isStaff);
     deptSelect.required = isStaff;
+    if (!isStaff) deptSelect.value = '';
   });
 </script>
 {% endblock %}
