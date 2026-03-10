@@ -249,50 +249,5 @@
   </div>
 </div>
 
-{# ── Active Keyword Flags ──────────────────────────────────────────────── #}
-{% if active_flags %}
-<div class="card border-danger shadow-sm mb-4">
-  <div class="card-header bg-danger text-white fw-semibold">
-    <i class="bi bi-exclamation-triangle-fill me-1"></i>
-    Recurring Issue Flags
-    <span class="badge bg-white text-danger ms-2">{{ active_flags | length }}</span>
-  </div>
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0 small">
-      <thead class="table-light">
-        <tr>
-          <th>Category</th>
-          <th>Keyword</th>
-          <th>Ticket Count</th>
-          <th>Flagged Since</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for flag in active_flags %}
-        <tr>
-          <td><span class="badge bg-secondary">{{ flag.Category }}</span></td>
-          <td><code>{{ flag.Keyword }}</code></td>
-          <td>
-            <span class="fw-bold text-danger">{{ flag.TicketCount }}</span>
-            tickets
-          </td>
-          <td class="text-muted">{{ flag.CreatedAt.strftime('%d %b %Y') }}</td>
-          <td>
-            <form method="POST"
-                  action="{{ url_for('admin.dismiss_flag', flag_id=flag.FlagId) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-              <button type="submit" class="btn btn-sm btn-outline-secondary">
-                <i class="bi bi-eye-slash me-1"></i>Dismiss
-              </button>
-            </form>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
 </body>
 </html>

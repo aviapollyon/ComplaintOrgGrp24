@@ -96,21 +96,6 @@
   </div>
 </div>
 
-{# ── Active flags banner ── #}
-{% if active_flags %}
-<div class="alert alert-danger d-flex align-items-start gap-2 mb-4">
-  <i class="bi bi-exclamation-triangle-fill fs-5 flex-shrink-0 mt-1"></i>
-  <div>
-    <strong>Recurring Issue Alert</strong> —
-    {{ active_flags | length }} keyword flag{{ 's' if active_flags | length > 1 else '' }}
-    active across your tickets:
-    {% for flag in active_flags %}
-      <span class="badge bg-danger ms-1">{{ flag.Category }} / {{ flag.Keyword }}</span>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
 <!-- Filters -->
 <div class="card border-0 shadow-sm mb-4">
   <div class="card-body">
@@ -209,17 +194,11 @@
       <tbody>
         {% from "macros/status_badge.html" import status_badge %}
         {% for t in tickets %}
-        <tr class="{{ 'table-warning' if t.TicketId in flagged_ticket_ids else '' }}">
+        <tr>
           <td class="text-muted small">#{{ t.TicketId }}</td>
           <td>
             <a href="{{ url_for('staff.view_ticket', ticket_id=t.TicketId) }}"
                class="text-decoration-none fw-semibold">{{ t.Title }}</a>
-            {% if t.TicketId in flagged_ticket_ids %}
-              <span class="badge bg-danger ms-1"
-                    title="This ticket is part of a recurring issue flag">
-                <i class="bi bi-flag-fill me-1"></i>Flagged
-              </span>
-            {% endif %}
             {% if t.Status.value == 'Pending Info' %}
               <span class="badge bg-warning text-dark ms-1">
                 <i class="bi bi-question-circle me-1"></i>Reply Needed

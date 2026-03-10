@@ -1,12 +1,9 @@
-
-# Entry point for running the Flask application
 import sys
 import os
 
-# Guard: ensure flask_mail is available before anything else imports it.
-# If using the system Python instead of the venv, provide a clear error.
+
 try:
-    import flask_mail  # noqa: F401
+    import flask_mail
 except ModuleNotFoundError:
     print(
         "\nERROR: flask_mail is not installed.\n"
@@ -21,10 +18,8 @@ except ModuleNotFoundError:
 
 from app import create_app
 
-# Create the Flask app instance using the factory
+# Create the Flask app instance using  factory
 app = create_app()
 
 if __name__ == '__main__':
-    # use_reloader=False avoids Flask spawning a second process that
-    # also binds the port, which leaves zombie sockets when stopped.
     app.run(debug=True, use_reloader=False, port=5000)
