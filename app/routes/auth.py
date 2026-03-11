@@ -4,6 +4,7 @@ from datetime import datetime
 from app import db
 from app.models.user import User, RoleEnum
 from app.models.department import Department
+from app.utils.helpers import log_audit
 
 # Blueprint for authentication-related routes
 auth_bp = Blueprint('auth', __name__)
@@ -59,6 +60,9 @@ def login():
 
             # Issue Flask-Login persistent credential cookies/header state mappings 
             login_user(user)
+            log_audit('user_login', target_type='user', target_id=user.UserId,
+                      details=f'{user.Email} [{user.Role.value}]')
+            db.session.commit()
             flash('Logged in successfully.', 'success')
 
             # Students who haven't given POPIA consent are redirected to the consent page
@@ -130,6 +134,9 @@ def register():
 @auth_bp.route('/logout')
 @login_required
 def logout():
+    log_audit('user_logout', target_type='user', target_id=current_user.UserId,
+              details=current_user.Email)
+    db.session.commit()
     # Invoke native library tool which erases login persistence sessions correctly securely
     logout_user()
     flash('You have been logged out.', 'info')

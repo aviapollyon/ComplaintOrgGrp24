@@ -1,46 +1,280 @@
-/* ���── DUT Grievance Portal — Main Styles ─── */
+/* ═══════════════════════════════════════════════════════════════════════════
+   DUT Grievance Portal — Main Styles v2
+   Supports Bootstrap 5.3 native dark mode via data-bs-theme attribute
+═══════════════════════════════════════════════════════════════════════════ */
 
+/* ── Google Font ────────────────────────────────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+/* ── Base ───────────────────────────────────────────────────────────────── */
 body {
-  background-color: #f5f7fa;
-  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 0.9375rem;
+  transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-/* Navbar brand */
-.navbar-brand {
-  letter-spacing: 0.02em;
+/* Light mode body bg (override Bootstrap's plain white) */
+[data-bs-theme="light"] body { background-color: #f0f4f8; }
+/* Dark mode body bg (richer dark than Bootstrap's default #212529) */
+[data-bs-theme="dark"]  body { background-color: #0d1117; }
+
+/* ── Portal Navbar ──────────────────────────────────────────────────────── */
+.portal-navbar {
+  background: linear-gradient(135deg, #0f2044 0%, #1a3a6b 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 0.55rem 0;
 }
 
-/* Card defaults */
+[data-bs-theme="dark"] .portal-navbar {
+  background: linear-gradient(135deg, #060d1a 0%, #0f1f3d 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Brand */
+.portal-navbar .navbar-brand {
+  color: #fff !important;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+}
+
+.brand-badge {
+  width: 32px;
+  height: 32px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.brand-accent { color: #60a5fa; }
+
+/* Nav links */
+.portal-navbar .nav-link {
+  color: rgba(255, 255, 255, 0.80) !important;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.45rem 0.7rem !important;
+  border-radius: 6px;
+  transition: color 0.15s, background-color 0.15s;
+}
+
+.portal-navbar .nav-link:hover,
+.portal-navbar .nav-link.active {
+  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Nav icon button (bells, theme toggle) */
+.btn-nav-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  text-decoration: none;
+  padding: 0;
+}
+
+.btn-nav-icon:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+/* User avatar (initials circle) */
+.user-avatar-sm {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+/* Role badges in navbar */
+.badge-role-admin   { background: #ef4444 !important; color: #fff !important; }
+.badge-role-staff   { background: #3b82f6 !important; color: #fff !important; }
+.badge-role-student { background: #6b7280 !important; color: #fff !important; }
+
+/* Notification dot (mobile bells) */
+.notif-dot {
+  position: absolute;
+  top: 4px; right: 4px;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid transparent;
+  pointer-events: none;
+}
+.notif-dot-warn { background: #f59e0b; }
+
+/* ── Announcement Bar ───────────────────────────────────────────────────── */
+.announcement-bar {
+  background: rgba(13, 202, 240, 0.08);
+  border-bottom: 1px solid rgba(13, 202, 240, 0.20);
+}
+
+[data-bs-theme="dark"] .announcement-bar {
+  background: rgba(13, 202, 240, 0.06);
+  border-bottom-color: rgba(13, 202, 240, 0.12);
+}
+
+.ann-toggle { color: #0dcaf0 !important; }
+.ann-toggle:hover { color: #3dd5f3 !important; }
+
+/* ── Cards ──────────────────────────────────────────────────────────────── */
 .card {
   border-radius: 0.75rem;
+  transition: box-shadow 0.2s ease;
 }
 
-/* Table */
+.card.border-0 {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+[data-bs-theme="dark"] .card.border-0 {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+}
+
+.card.border-0:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+[data-bs-theme="dark"] .card.border-0:hover {
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+/* ── Stat cards (dashboard KPIs) ────────────────────────────────────────── */
+.stat-card {
+  border-radius: 0.75rem;
+  border: none;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-2px);
+}
+
+.stat-icon-wrap {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.3rem;
+  flex-shrink: 0;
+}
+
+/* ── Tables ─────────────────────────────────────────────────────────────── */
 .table th {
-  font-size: 0.8rem;
+  font-size: 0.73rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: #6c757d;
+  letter-spacing: 0.06em;
 }
 
-/* Timeline dot */
-.bi-circle-fill {
-  font-size: 0.55rem;
+[data-bs-theme="light"] .table th { color: #64748b; }
+[data-bs-theme="dark"]  .table th { color: #94a3b8; }
+
+/* ── Metric cards (reports) ─────────────────────────────────────────────── */
+.metric-card { border-left: 4px solid; }
+.metric-card.primary { border-color: var(--bs-primary); }
+.metric-card.success { border-color: var(--bs-success); }
+.metric-card.warning { border-color: var(--bs-warning); }
+.metric-card.info    { border-color: var(--bs-info);    }
+
+/* ── Forms ──────────────────────────────────────────────────────────────── */
+.form-control,
+.form-select {
+  border-radius: 0.5rem;
+  font-size: 0.9rem;
+  transition: border-color 0.15s, box-shadow 0.15s;
 }
 
-/* Star buttons */
+.form-control:focus,
+.form-select:focus {
+  box-shadow: 0 0 0 3px rgba(13, 110, 253, 0.18);
+}
+
+[data-bs-theme="dark"] .form-control:focus,
+[data-bs-theme="dark"] .form-select:focus {
+  box-shadow: 0 0 0 3px rgba(99, 179, 237, 0.2);
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.btn {
+  border-radius: 0.5rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+
+.btn-sm { border-radius: 0.4rem; }
+
+/* ── Pagination ─────────────────────────────────────────────────────────── */
+.page-link { border-radius: 6px !important; margin: 0 2px; }
+
+/* ── Badges ─────────────────────────────────────────────────────────────── */
+.badge { font-weight: 500; letter-spacing: 0.01em; }
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+.portal-footer {
+  border-top: 1px solid var(--bs-border-color);
+  font-size: 0.85rem;
+}
+
+/* ── Auth pages (login / register) ─────────────────────────────────────── */
+.auth-card-wrap {
+  min-height: calc(100vh - 160px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── Timeline dot (ticket updates) ─────────────────────────────────────── */
+.bi-circle-fill { font-size: 0.55rem; }
+
+/* ── Star buttons (ticket priority toggle) ──────────────────────────────── */
 .star-btn {
   font-size: 1.25rem;
   padding: 0.25rem 0.4rem;
   line-height: 1;
 }
 
-/* Priority badge in forms */
-#priorityBadge {
-  transition: border-color 0.2s, color 0.2s;
+/* ── Priority badge transition ──────────────────────────────────────────── */
+#priorityBadge { transition: border-color 0.2s, color 0.2s; }
+
+/* ── Chart containers ───────────────────────────────────────────────────── */
+.chart-container { position: relative; height: 260px; }
+
+/* ── Misc ───────────────────────────────────────────────────────────────── */
+@media print {
+  .no-print { display: none !important; }
+  .card     { break-inside: avoid; }
+  body      { font-size: 12px; }
+  .container-lg { max-width: 100% !important; }
+  canvas    { max-height: 220px !important; }
 }
 
-/* Footer */
-footer {
-  font-size: 0.85rem;
-}
+/* Smooth scrolling */
+html { scroll-behavior: smooth; }
+
+/* Selection color */
+::selection { background: #3b82f620; }
+[data-bs-theme="dark"] ::selection { background: #60a5fa30; }

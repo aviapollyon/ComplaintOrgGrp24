@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+{% from "macros/pagination.html" import render_pagination %}
+{% block title %}Audit Logs — Admin{% endblock %}
+
+{% block content %}
+
+{# ── Page Header ── #}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+  <div>
+    <h4 class="mb-1 fw-bold">
+      <i class="bi bi-journal-text me-2 text-primary"></i>Audit Logs
+    </h4>
+    <p class="text-muted mb-0 small">
+      Records of user actions performed in the system.
+    </p>
+  </div>
+  <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+{# ── Filter Bar ── #}
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <form method="GET" class="row g-2 align-items-end">
+      {# Preserve sort direction across filter submissions #}
+      <input type="hidden" name="sort" value="{{ sort }}">
+      <div class="col-md-3">
+        <label class="form-label small fw-semibold">Action</label>
+        {% if all_actions %}
+        <select name="action" class="form-select form-select-sm">
+          <option value="">— All Actions —</option>
+          {% for a in all_actions %}
+            <option value="{{ a }}" {{ 'selected' if action_q == a }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+        {% else %}
+        <input type="text" name="action" class="form-control form-control-sm"
+               placeholder="e.g. ticket_status_changed" value="{{ action_q }}"/>
+        {% endif %}
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Actor (name)</label>
+        <input type="text" name="actor" class="form-control form-control-sm"
+               placeholder="Search by name…" value="{{ actor_q }}"/>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Target Type</label>
+        <select name="target_type" class="form-select form-select-sm">
+          <option value="">— All Types —</option>
+          {% for t in all_types %}
+            <option value="{{ t }}" {{ 'selected' if target_type == t }}>{{ t | title }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-2">
+        <label class="form-label small fw-semibold">Per page</label>
+        <select name="per_page" class="form-select form-select-sm">
+          {% for n in [10, 25, 50, 100] %}
+            <option value="{{ n }}" {{ 'selected' if per_page == n }}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm flex-grow-1">
+          <i class="bi bi-funnel me-1"></i>Filter
+        </button>
+        <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-outline-secondary btn-sm" title="Clear filters">
+          <i class="bi bi-x-lg"></i>
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# ── Results summary bar ── #}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <span class="text-muted small">
+    {% if pagination.total == 0 %}
+      No entries found
+    {% else %}
+      Showing <strong>{{ ((pagination.page - 1) * per_page) + 1 }}–{{ [pagination.page * per_page, pagination.total] | min }}</strong>
+      of <strong>{{ pagination.total }}</strong> log {{ 'entry' if pagination.total == 1 else 'entries' }}
+    {% endif %}
+    {% if sort == 'asc' %}<span class="ms-1 text-muted">(oldest first)</span>{% else %}<span class="ms-1 text-muted">(newest first)</span>{% endif %}
+  </span>
+  {% if action_q or actor_q or target_type %}
+  <span class="d-flex align-items-center gap-1 flex-wrap">
+    <i class="bi bi-funnel-fill text-primary"></i>
+    {% if action_q %}<span class="badge bg-primary">{{ action_q }}</span>{% endif %}
+    {% if actor_q %}<span class="badge bg-secondary">actor: {{ actor_q }}</span>{% endif %}
+    {% if target_type %}<span class="badge bg-info text-dark">{{ target_type }}</span>{% endif %}
+    <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-outline-secondary btn-sm py-0 px-2 ms-1"
+       title="Clear filters"><i class="bi bi-x-lg"></i></a>
+  </span>
+  {% endif %}
+</div>
+
+{# ── Log Table ── #}
+{% if logs %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0 small">
+      <thead>
+        <tr>
+          <th class="ps-3" style="width:50px;">#</th>
+          <th style="width:160px;">
+            {# Sort toggle: clicking flips asc ↔ desc, resets to page 1 #}
+            {% set sort_args = request.args.to_dict() %}
+            {% if sort == 'asc' %}
+              {% set _ = sort_args.update({'sort': 'desc', 'page': '1'}) %}
+            {% else %}
+              {% set _ = sort_args.update({'sort': 'asc', 'page': '1'}) %}
+            {% endif %}
+            <a href="{{ request.path }}?{{ sort_args | urlencode }}"
+               class="text-decoration-none text-dark d-inline-flex align-items-center gap-1"
+               title="Sort by date {{ 'oldest first' if sort == 'desc' else 'newest first' }}">
+              Timestamp
+              <i class="bi {{ 'bi-sort-up' if sort == 'asc' else 'bi-sort-down' }} text-primary"></i>
+            </a>
+          </th>
+          <th>Action</th>
+          <th class="d-none d-md-table-cell">Actor</th>
+          <th class="d-none d-lg-table-cell">Target</th>
+          <th class="d-none d-lg-table-cell pe-3">Details</th>
+          <th class="d-none d-xl-table-cell">IP</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+        <tr>
+          <td class="text-muted ps-3">{{ log.LogId }}</td>
+          <td class="text-muted" style="font-size:0.78rem;white-space:nowrap;">
+            {{ log.CreatedAt.strftime('%d %b %Y') }}
+            <div class="text-muted" style="font-size:0.72rem;">{{ log.CreatedAt.strftime('%H:%M:%S') }}</div>
+          </td>
+          <td>
+            {# Colour-code action type #}
+            {% if 'delete' in log.Action | lower or 'deactivat' in log.Action | lower %}
+              <span class="badge bg-danger">{{ log.Action }}</span>
+            {% elif 'create' in log.Action | lower or 'add' in log.Action | lower or 'register' in log.Action | lower %}
+              <span class="badge bg-success">{{ log.Action }}</span>
+            {% elif 'update' in log.Action | lower or 'edit' in log.Action | lower or 'change' in log.Action | lower
+                    or 'reassign' in log.Action | lower or 'force' in log.Action | lower %}
+              <span class="badge bg-warning text-dark">{{ log.Action }}</span>
+            {% elif 'login' in log.Action | lower or 'logout' in log.Action | lower %}
+              <span class="badge bg-info text-dark">{{ log.Action }}</span>
+            {% else %}
+              <span class="badge bg-secondary">{{ log.Action }}</span>
+            {% endif %}
+          </td>
+          <td class="d-none d-md-table-cell">
+            {% if log.actor %}
+              <div class="d-flex align-items-center gap-2">
+                <div class="user-avatar-sm" style="background:rgba(99,102,241,.2);color:#6366f1;border-color:#6366f1;">
+                  {{ log.actor.FullName[0] | upper }}
+                </div>
+                <div>
+                  <div class="fw-medium" style="font-size:0.8rem;">{{ log.actor.FullName }}</div>
+                  <div class="text-muted" style="font-size:0.7rem;">{{ log.actor.Role.value }}</div>
+                </div>
+              </div>
+            {% else %}
+              <span class="text-muted">System</span>
+            {% endif %}
+          </td>
+          <td class="d-none d-lg-table-cell">
+            {% if log.TargetType %}
+              <span class="badge bg-light text-dark border me-1">{{ log.TargetType | title }}</span>
+              {% if log.TargetId %}
+                <span class="text-muted" style="font-size:0.78rem;">#{{ log.TargetId }}</span>
+              {% endif %}
+            {% else %}
+              <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="d-none d-lg-table-cell text-muted pe-3" style="max-width:240px;">
+            {% if log.Details %}
+              <span title="{{ log.Details }}">{{ log.Details | truncate(60, true) }}</span>
+            {% else %}
+              <span>—</span>
+            {% endif %}
+          </td>
+          <td class="d-none d-xl-table-cell text-muted" style="font-family:monospace;font-size:0.75rem;">
+            {{ log.IPAddress or '—' }}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{{ render_pagination(pagination) }}
+
+{% else %}
+{# Empty state #}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center py-5">
+    <i class="bi bi-journal-x display-4 text-muted d-block mb-3"></i>
+    <h5 class="text-muted mb-1">No audit log entries found</h5>
+    {% if action_q or actor_q or target_type %}
+      <p class="text-muted small mb-3">Try clearing the active filters.</p>
+      <a href="{{ url_for('admin.audit_logs') }}" class="btn btn-outline-secondary btn-sm">
+        <i class="bi bi-x-lg me-1"></i>Clear Filters
+      </a>
+    {% else %}
+      <p class="text-muted small">
+        Audit log entries will appear here as administrators perform actions.
+      </p>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}

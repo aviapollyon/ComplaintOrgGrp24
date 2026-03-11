@@ -1,5 +1,5 @@
 import os
-from flask import current_app, url_for
+from flask import current_app, url_for, request as _flask_request
 
 # ── Category → SubCategories ──────────────────────────────────────────────────
 CATEGORY_SUBCATEGORY_MAP: dict[str, list[str]] = {
@@ -281,3 +281,33 @@ def check_and_raise_flags(ticket) -> None:
                     TicketId = ticket.TicketId,
                     IsRead   = False,
                 ))
+
+def log_audit(action: str, target_type: str = None, target_id: int = None,
+              details: str = None) -> None:
+    """Record an administrative action in the audit log.
+    Must be called within a request context; the db.session.commit() is
+    left to the caller so it can be batched with other writes.
+    """
+    from app.models.audit_log import AuditLog
+    from app import db
+    from flask_login import current_user
+
+    try:
+        actor_id = current_user.UserId if current_user.is_authenticated else None
+    except Exception:
+        actor_id = None
+
+    try:
+        ip = _flask_request.remote_addr
+    except Exception:
+        ip = None
+
+    entry = AuditLog(
+        ActorId    = actor_id,
+        Action     = action,
+        TargetType = target_type,
+        TargetId   = target_id,
+        Details    = details,
+        IPAddress  = ip,
+    )
+    db.session.add(entry)

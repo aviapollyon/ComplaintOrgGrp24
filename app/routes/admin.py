@@ -20,6 +20,7 @@ from app.models.announcement     import Announcement
 from app.models.admin_notification import AdminNotification
 from app.models.escalation       import EscalationRequest
 from app.utils.decorators        import role_required
+from app.utils.helpers           import log_audit
 from app.forms.admin_forms       import (
     AddUserForm, EditUserForm,
     AdminTicketFilterForm, AdminUserFilterForm,
@@ -204,6 +205,8 @@ def add_user():
         # Hash the password and save the user
         user.set_password(form.password.data)
         db.session.add(user)
+        log_audit('user_created', target_type='user',
+                  details=f'Created {user.Role.value} account: {user.Email}')
         db.session.commit()
         flash(f'User {user.FullName} created.', 'success')
         return redirect(url_for('admin.users'))
@@ -248,6 +251,8 @@ def edit_user(user_id):
         user.Role         = RoleEnum[form.role.data]
         user.DepartmentId = form.department.data if form.department.data != 0 else None
         user.UpdatedAt    = datetime.utcnow()
+        log_audit('user_updated', target_type='user', target_id=user_id,
+                  details=f'Updated profile for {user.Email}')
         db.session.commit()
         flash('User updated.', 'success')
         return redirect(url_for('admin.users'))
@@ -269,9 +274,10 @@ def toggle_user(user_id):
         
     user.IsActive  = not user.IsActive
     user.UpdatedAt = datetime.utcnow()
-    db.session.commit()
-    
     state = 'reactivated' if user.IsActive else 'deactivated'
+    log_audit(f'user_{state}', target_type='user', target_id=user_id,
+              details=f'{user.FullName} ({user.Email})')
+    db.session.commit()
     flash(f'{user.FullName} has been {state}.', 'success')
     return redirect(url_for('admin.users'))
 
@@ -462,6 +468,8 @@ def reassign_ticket(ticket_id):
             StatusChange  = UpdateStatusEnum.Assigned,
             IsReplyThread = False,
         ))
+        log_audit('ticket_reassigned', target_type='ticket', target_id=ticket_id,
+                  details=f'{old_name} → {new_staff.FullName}')
         db.session.commit()
         flash(f'Ticket reassigned to {new_staff.FullName}.', 'success')
     else:
@@ -486,6 +494,7 @@ def force_status(ticket_id):
             return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
 
         # Push the new status directly onto the db record
+        old_status = ticket.Status.value
         ticket.Status    = new_status
         ticket.UpdatedAt = datetime.utcnow()
         if new_status == StatusEnum.Resolved and not ticket.ResolvedAt:
@@ -505,6 +514,8 @@ def force_status(ticket_id):
             StatusChange  = update_status,
             IsReplyThread = False,
         ))
+        log_audit('ticket_status_changed', target_type='ticket', target_id=ticket_id,
+                  details=f'Status: {old_status} → {new_status.value}')
         db.session.commit()
         flash(f'Status changed to "{new_status.value}".', 'success')
     else:
@@ -540,6 +551,8 @@ def force_priority(ticket_id):
                              f'Reason: {form.reason.data.strip()}'),
             IsReplyThread = False,
         ))
+        log_audit('ticket_priority_changed', target_type='ticket', target_id=ticket_id,
+                  details=f'Priority: {old_priority} → {new_priority.value}')
         db.session.commit()
         flash(f'Priority changed to "{new_priority.value}".', 'success')
     else:
@@ -850,10 +863,13 @@ def announcements():
     form = AnnouncementForm()
     if form.validate_on_submit():
         # Inject standard broadcast entity mapping the creator/target demographic parameters provided via modal
-        db.session.add(Announcement(
+        ann = Announcement(
             Title=form.title.data.strip(), Message=form.message.data.strip(),
             TargetAudience=form.audience.data, CreatedBy=current_user.UserId, IsActive=True,
-        ))
+        )
+        db.session.add(ann)
+        log_audit('announcement_created', target_type='announcement',
+                  details=f'Title: {form.title.data.strip()[:60]}')
         db.session.commit()
         flash('Announcement posted.', 'success')
         return redirect(url_for('admin.announcements'))
@@ -1007,3 +1023,62 @@ def dismiss_flag(flag_id):
     db.session.commit()
     flash(f'Flag for "{flag.Category} / {flag.Keyword}" dismissed.', 'info')
     return redirect(url_for('admin.dashboard'))
+
+
+# ── AUDIT LOGS ────────────────────────────────────────────────────────────────
+@admin_bp.route('/audit-logs')
+@login_required
+@role_required('Admin')
+def audit_logs():
+    from app.models.audit_log import AuditLog
+    from sqlalchemy.orm import aliased
+
+    page     = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 25, type=int)
+    if per_page not in (10, 25, 50, 100):
+        per_page = 25
+    sort = request.args.get('sort', 'desc')
+    if sort not in ('asc', 'desc'):
+        sort = 'desc'
+
+    action_q    = request.args.get('action', '').strip()
+    actor_q     = request.args.get('actor', '').strip()
+    target_type = request.args.get('target_type', '').strip()
+
+    query = AuditLog.query
+
+    if action_q:
+        query = query.filter(AuditLog.Action.ilike(f'%{action_q}%'))
+    if actor_q:
+        # Use an aliased User to avoid clashing with the lazy='joined' auto-join
+        # on the `actor` relationship, which would otherwise produce duplicate rows.
+        ActorAlias = aliased(User)
+        query = (query
+                 .join(ActorAlias, AuditLog.ActorId == ActorAlias.UserId, isouter=True)
+                 .filter(ActorAlias.FullName.ilike(f'%{actor_q}%')))
+    if target_type:
+        query = query.filter(AuditLog.TargetType == target_type)
+
+    order_col = AuditLog.CreatedAt.asc() if sort == 'asc' else AuditLog.CreatedAt.desc()
+    query     = query.order_by(order_col, AuditLog.LogId.desc())
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+    # Distinct action names for filter dropdown
+    raw_actions = db.session.query(AuditLog.Action).distinct().order_by(AuditLog.Action).all()
+    all_actions = [a[0] for a in raw_actions]
+
+    raw_types = db.session.query(AuditLog.TargetType).distinct().order_by(AuditLog.TargetType).all()
+    all_types = [t[0] for t in raw_types if t[0]]
+
+    return render_template(
+        'admin/audit_logs.html',
+        logs        = pagination.items,
+        pagination  = pagination,
+        all_actions = all_actions,
+        all_types   = all_types,
+        action_q    = action_q,
+        actor_q     = actor_q,
+        target_type = target_type,
+        sort        = sort,
+        per_page    = per_page,
+    )

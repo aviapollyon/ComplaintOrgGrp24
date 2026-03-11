@@ -1,9 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-bs-theme="light">
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>{% block title %}DUT Grievance Portal{% endblock %}</title>
+  {# Apply saved theme before CSS renders to prevent flash #}
+  <script>
+    (function(){
+      var t = localStorage.getItem('dut-theme') ||
+              (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-bs-theme', t);
+    })();
+  </script>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
   <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"/>
@@ -11,29 +19,50 @@
 </head>
 <body>
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
-  <div class="container">
-    <a class="navbar-brand fw-bold" href="{{ url_for('auth.index') }}">
-      <i class="bi bi-shield-check me-2"></i>DUT Grievance Portal
-    </a>
-    <button class="navbar-toggler" type="button"
-            data-bs-toggle="collapse" data-bs-target="#navMenu">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navMenu">
-      <ul class="navbar-nav ms-auto align-items-lg-center">
-        {% if current_user.is_authenticated %}
-          <li class="nav-item">
-            <span class="nav-link text-white-50">
-              <i class="bi bi-person-circle me-1"></i>{{ current_user.FullName }}
-              <span class="badge bg-light text-primary ms-1">{{ current_user.Role.value }}</span>
-            </span>
-          </li>
+{# ── Main Navbar ── #}
+<nav class="navbar navbar-expand-lg portal-navbar">
+  <div class="container-lg px-3">
 
-          {# ── Role nav links ── #}
+    {# Brand #}
+    <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('auth.index') }}">
+      <div class="brand-badge"><i class="bi bi-shield-check-fill"></i></div>
+      <span class="fw-bold d-none d-sm-inline">DUT <span class="brand-accent">Portal</span></span>
+    </a>
+
+    {# Always-visible controls (mobile header) #}
+    <div class="d-flex align-items-center gap-1 ms-auto">
+      {% if current_user.is_authenticated %}
+        {% if current_user.Role.value == 'Admin' %}
+        <a class="btn-nav-icon position-relative d-lg-none"
+           href="{{ url_for('admin.notifications') }}" title="System Notifications">
+          <i class="bi bi-bell-fill"></i>
+          {% if admin_unread_count > 0 %}<span class="notif-dot"></span>{% endif %}
+        </a>
+        {% endif %}
+        <a class="btn-nav-icon position-relative d-lg-none"
+           href="{{ url_for('notif.list_notifications') }}" title="My Notifications">
+          <i class="bi bi-bell"></i>
+          {% if user_unread_count > 0 %}<span class="notif-dot notif-dot-warn"></span>{% endif %}
+        </a>
+      {% endif %}
+      <button class="btn-nav-icon theme-toggle-btn" data-theme-toggle title="Toggle dark/light mode">
+        <i class="bi bi-sun-fill theme-icon"></i>
+      </button>
+      <button class="navbar-toggler border-0 p-1" type="button"
+              data-bs-toggle="collapse" data-bs-target="#navMenu" aria-label="Menu">
+        <i class="bi bi-list fs-4 text-white"></i>
+      </button>
+    </div>
+
+    {# Collapsible nav #}
+    <div class="collapse navbar-collapse" id="navMenu">
+      <ul class="navbar-nav me-auto mt-2 mt-lg-0">
+        {% if current_user.is_authenticated %}
           {% if current_user.Role.value == 'Student' %}
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('student.dashboard') }}">Dashboard</a>
+              <a class="nav-link" href="{{ url_for('student.dashboard') }}">
+                <i class="bi bi-house me-1"></i>Dashboard
+              </a>
             </li>
             <li class="nav-item">
               <a class="nav-link" href="{{ url_for('student.submit_ticket') }}">
@@ -43,85 +72,113 @@
 
           {% elif current_user.Role.value == 'Staff' %}
             <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('staff.dashboard') }}">Dashboard</a>
+              <a class="nav-link" href="{{ url_for('staff.dashboard') }}">
+                <i class="bi bi-person-workspace me-1"></i>Dashboard
+              </a>
             </li>
 
           {% elif current_user.Role.value == 'Admin' %}
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}">Overview</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.users') }}">Users</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.tickets') }}">Tickets</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.departments') }}">Departments</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.reports') }}">Reports</a></li>
-            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.announcements') }}">Announcements</a></li>
-            {# ── Admin system bell ── #}
-            <li class="nav-item">
-              <a class="nav-link position-relative" href="{{ url_for('admin.notifications') }}"
-                 title="System Notifications">
-                <i class="bi bi-bell-fill fs-6"></i>
-                {% if admin_unread_count > 0 %}
-                  <span class="position-absolute top-0 start-100 translate-middle
-                               badge rounded-pill bg-danger"
-                        style="font-size:0.6rem;min-width:1.2rem;">
-                    {{ admin_unread_count if admin_unread_count < 100 else '99+' }}
-                  </span>
-                {% endif %}
-              </a>
-            </li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="bi bi-grid me-1"></i>Overview</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.users') }}"><i class="bi bi-people me-1"></i>Users</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.tickets') }}"><i class="bi bi-ticket-detailed me-1"></i>Tickets</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.departments') }}"><i class="bi bi-building me-1"></i>Depts</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.reports') }}"><i class="bi bi-bar-chart me-1"></i>Reports</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.announcements') }}"><i class="bi bi-megaphone me-1"></i>Announce</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.audit_logs') }}"><i class="bi bi-journal-text me-1"></i>Audit</a></li>
+          {% endif %}
+        {% else %}
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.login') }}"><i class="bi bi-box-arrow-in-right me-1"></i>Login</a></li>
+          <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.register') }}"><i class="bi bi-person-plus me-1"></i>Register</a></li>
+        {% endif %}
+      </ul>
+
+      {# Desktop right side #}
+      <ul class="navbar-nav align-items-lg-center gap-1 d-none d-lg-flex">
+        {% if current_user.is_authenticated %}
+          <li class="nav-item">
+            <span class="nav-link d-flex align-items-center gap-2 pe-0">
+              <div class="user-avatar-sm">{{ current_user.FullName[0] | upper }}</div>
+              <span class="small fw-medium">{{ current_user.FullName.split()[0] }}</span>
+              <span class="badge badge-role-{{ current_user.Role.value | lower }}">{{ current_user.Role.value }}</span>
+            </span>
+          </li>
+
+          {% if current_user.Role.value == 'Admin' %}
+          <li class="nav-item">
+            <a class="btn-nav-icon position-relative" href="{{ url_for('admin.notifications') }}" title="System Notifications">
+              <i class="bi bi-bell-fill"></i>
+              {% if admin_unread_count > 0 %}
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.6rem;min-width:1.1rem;">
+                  {{ admin_unread_count if admin_unread_count < 100 else '99+' }}
+                </span>
+              {% endif %}
+            </a>
+          </li>
           {% endif %}
 
-          {# ── Per-user notification bell (all roles) ── #}
           <li class="nav-item">
-            <a class="nav-link position-relative" href="{{ url_for('notif.list_notifications') }}"
-               title="My Notifications">
-              <i class="bi bi-bell fs-6"></i>
+            <a class="btn-nav-icon position-relative" href="{{ url_for('notif.list_notifications') }}" title="My Notifications">
+              <i class="bi bi-bell"></i>
               {% if user_unread_count > 0 %}
-                <span class="position-absolute top-0 start-100 translate-middle
-                             badge rounded-pill bg-warning text-dark"
-                      style="font-size:0.6rem;min-width:1.2rem;">
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" style="font-size:.6rem;min-width:1.1rem;">
                   {{ user_unread_count if user_unread_count < 100 else '99+' }}
                 </span>
               {% endif %}
             </a>
           </li>
 
-          <li class="nav-item ms-lg-2">
-            <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">
+          <li class="nav-item ms-1">
+            <a class="btn btn-outline-light btn-sm px-3" href="{{ url_for('auth.logout') }}">
               <i class="bi bi-box-arrow-right me-1"></i>Logout
             </a>
           </li>
         {% else %}
-          <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.login') }}">Login</a></li>
-          <li class="nav-item"><a class="nav-link" href="{{ url_for('auth.register') }}">Register</a></li>
+          <li class="nav-item">
+            <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
+          </li>
+          <li class="nav-item">
+            <a class="btn btn-light btn-sm px-3" href="{{ url_for('auth.register') }}">Register</a>
+          </li>
         {% endif %}
       </ul>
+
+      {# Mobile-only: user info + logout shown at bottom of collapsed menu #}
+      {% if current_user.is_authenticated %}
+      <div class="d-lg-none border-top border-white border-opacity-25 mt-2 pt-2 pb-1
+                  d-flex align-items-center justify-content-between">
+        <div class="d-flex align-items-center gap-2 text-white-50 small">
+          <div class="user-avatar-sm">{{ current_user.FullName[0] | upper }}</div>
+          <span>{{ current_user.FullName }}</span>
+          <span class="badge badge-role-{{ current_user.Role.value | lower }}">{{ current_user.Role.value }}</span>
+        </div>
+        <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">
+          <i class="bi bi-box-arrow-right me-1"></i>Logout
+        </a>
+      </div>
+      {% endif %}
     </div>
   </div>
 </nav>
 
-{# ── Collapsible Announcement Banners ── #}
+{# ── Announcement Banners ── #}
 {% if active_announcements %}
-<div class="bg-info bg-opacity-10 border-bottom border-info">
-  <div class="container py-1">
-    <button class="btn btn-sm btn-link text-info text-decoration-none p-0 fw-semibold"
-            type="button" data-bs-toggle="collapse"
-            data-bs-target="#announcementsCollapse">
+<div class="announcement-bar">
+  <div class="container-lg py-1">
+    <button class="btn btn-sm btn-link text-decoration-none p-0 fw-semibold ann-toggle"
+            type="button" data-bs-toggle="collapse" data-bs-target="#announcementsCollapse">
       <i class="bi bi-megaphone-fill me-1"></i>
-      {{ active_announcements | length }}
-      Announcement{{ 's' if active_announcements | length > 1 else '' }}
+      {{ active_announcements | length }} Announcement{{ 's' if active_announcements | length > 1 }}
       <i class="bi bi-chevron-down ms-1" id="annChevron"></i>
     </button>
   </div>
   <div class="collapse" id="announcementsCollapse">
     {% for ann in active_announcements %}
-    <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0
-                border-0 border-top" role="alert">
-      <div class="container d-flex align-items-start gap-2">
+    <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0 border-0 border-top" role="alert">
+      <div class="container-lg d-flex align-items-start gap-2">
         <i class="bi bi-megaphone-fill text-info mt-1 flex-shrink-0"></i>
         <div>
           <strong>{{ ann.Title }}</strong> — {{ ann.Message }}
-          <span class="text-muted small ms-2">
-            {{ ann.CreatedAt.strftime('%d %b %Y') }}
-          </span>
+          <span class="text-muted small ms-2">{{ ann.CreatedAt.strftime('%d %b %Y') }}</span>
         </div>
         <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
       </div>
@@ -131,41 +188,81 @@
 </div>
 {% endif %}
 
-{# ── Flash messages ── #}
-<div class="container mt-3">
+{# ── Flash Messages ── #}
+<div class="container-lg mt-3">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
       {% for category, message in messages %}
-        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-          {{ message }}
-          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        <div class="alert alert-{{ category }} alert-dismissible fade show
+                    d-flex align-items-center gap-2 rounded-3" role="alert">
+          {% if category == 'success' %}    <i class="bi bi-check-circle-fill flex-shrink-0"></i>
+          {% elif category == 'danger' %}   <i class="bi bi-x-circle-fill flex-shrink-0"></i>
+          {% elif category == 'warning' %}  <i class="bi bi-exclamation-triangle-fill flex-shrink-0"></i>
+          {% else %}                        <i class="bi bi-info-circle-fill flex-shrink-0"></i>
+          {% endif %}
+          <span>{{ message }}</span>
+          <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
         </div>
       {% endfor %}
     {% endif %}
   {% endwith %}
 </div>
 
-<main class="container my-4">
+<main class="container-lg my-4">
   {% block content %}{% endblock %}
 </main>
 
-<footer class="bg-light border-top py-3 mt-5 text-center text-muted small">
-  &copy; 2026 DUT Digital Grievance &amp; Complaint Portal
+<footer class="portal-footer py-4 mt-5">
+  <div class="container-lg text-center">
+    <div class="mb-1 fw-semibold">
+      <i class="bi"></i>DUT Digital Grievance &amp; Complaint Portal
+    </div>
+    <div class="text-muted small">&copy; 2026 Durban University of Technology &mdash; All rights reserved</div>
+  </div>
 </footer>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="{{ url_for('static', filename='js/file_validation.js') }}"></script>
 <script>
-  const annCollapse = document.getElementById('announcementsCollapse');
-  const annChevron  = document.getElementById('annChevron');
+  /* ── Theme toggle ── */
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-bs-theme', theme);
+    localStorage.setItem('dut-theme', theme);
+    document.querySelectorAll('.theme-icon').forEach(function(el) {
+      el.className = theme === 'dark' ? 'bi bi-moon-stars-fill theme-icon'
+                                      : 'bi bi-sun-fill theme-icon';
+    });
+  }
+  // Sync icon with current theme on load
+  applyTheme(document.documentElement.getAttribute('data-bs-theme') || 'light');
+
+  document.querySelectorAll('[data-theme-toggle]').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var next = document.documentElement.getAttribute('data-bs-theme') === 'dark' ? 'light' : 'dark';
+      applyTheme(next);
+    });
+  });
+
+  /* ── Announcements chevron ── */
+  var annCollapse = document.getElementById('announcementsCollapse');
+  var annChevron  = document.getElementById('annChevron');
   if (annCollapse && annChevron) {
-    annCollapse.addEventListener('show.bs.collapse', () => {
+    annCollapse.addEventListener('show.bs.collapse', function() {
       annChevron.className = 'bi bi-chevron-up ms-1';
     });
-    annCollapse.addEventListener('hide.bs.collapse', () => {
+    annCollapse.addEventListener('hide.bs.collapse', function() {
       annChevron.className = 'bi bi-chevron-down ms-1';
     });
   }
+
+  /* ── Active nav link highlighting ── */
+  var currentPath = window.location.pathname;
+  document.querySelectorAll('.navbar-nav .nav-link[href]').forEach(function(link) {
+    var lp = link.getAttribute('href');
+    if (lp && lp !== '/' && currentPath.startsWith(lp)) {
+      link.classList.add('active');
+    }
+  });
 </script>
 {% block extra_scripts %}{% endblock %}
 </body>

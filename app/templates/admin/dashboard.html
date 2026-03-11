@@ -1,178 +1,51 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>{% block title %}DUT Grievance Portal{% endblock %}</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
-  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}"/>
-  {% block extra_head %}{% endblock %}
-</head>
-<body>
+﻿{% extends "base.html" %}
+{% from "macros/status_badge.html" import status_badge %}
+{% block title %}Admin Dashboard â€” DUT Grievance Portal{% endblock %}
 
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary shadow-sm">
-  <div class="container">
-    <a class="navbar-brand fw-bold" href="{{ url_for('auth.index') }}">
-      <i class="bi bi-shield-check me-2"></i>DUT Grievance Portal
+{% block content %}
+
+{# â”€â”€ Page Header â”€â”€ #}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-3 mb-4">
+  <div>
+    <h4 class="mb-1 fw-bold">
+      <i class="bi bi-grid-fill me-2 text-primary"></i>Admin Overview
+    </h4>
+    <p class="text-muted mb-0 small">Welcome back, <strong>{{ current_user.FullName }}</strong></p>
+  </div>
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('admin.tickets') }}" class="btn btn-outline-primary btn-sm">
+      <i class="bi bi-ticket-detailed me-1"></i>All Tickets
     </a>
-    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navMenu">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navMenu">
-      <ul class="navbar-nav ms-auto align-items-lg-center">
-        {% if current_user.is_authenticated %}
-          <li class="nav-item">
-            <span class="nav-link text-white-50">
-              <i class="bi bi-person-circle me-1"></i>{{ current_user.FullName }}
-              <span class="badge bg-light text-primary ms-1">{{ current_user.Role.value }}</span>
-            </span>
-          </li>
-          {% if current_user.Role.value == 'Student' %}
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('student.dashboard') }}">Dashboard</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('student.submit_ticket') }}">
-                <i class="bi bi-plus-circle me-1"></i>New Complaint
-              </a>
-            </li>
-          {% elif current_user.Role.value == 'Staff' %}
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('staff.dashboard') }}">Dashboard</a>
-            </li>
-          {% elif current_user.Role.value == 'Admin' %}
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('admin.dashboard') }}">Overview</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('admin.users') }}">Users</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('admin.tickets') }}">Tickets</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('admin.departments') }}">Departments</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('admin.reports') }}">Reports</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="{{ url_for('admin.announcements') }}">
-                <i class="bi bi-megaphone me-1"></i>Announcements
-              </a>
-            </li>
-            {# ── Admin system bell ── #}
-            <li class="nav-item">
-              <a class="nav-link position-relative" href="{{ url_for('admin.notifications') }}"
-                 title="System Notifications">
-                <i class="bi bi-bell-fill fs-6"></i>
-                {% if admin_unread_count > 0 %}
-                  <span class="position-absolute top-0 start-100 translate-middle
-                               badge rounded-pill bg-danger"
-                        style="font-size:0.6rem;min-width:1.2rem;">
-                    {{ admin_unread_count if admin_unread_count < 100 else '99+' }}
-                  </span>
-                {% endif %}
-              </a>
-            </li>
-          {% endif %}
-          {# ── Per-user notification bell (all roles) ── #}
-          <li class="nav-item">
-            <a class="nav-link position-relative" href="{{ url_for('notif.list_notifications') }}"
-               title="My Notifications">
-              <i class="bi bi-bell fs-6"></i>
-              {% if user_unread_count > 0 %}
-                <span class="position-absolute top-0 start-100 translate-middle
-                             badge rounded-pill bg-warning text-dark"
-                      style="font-size:0.6rem;min-width:1.2rem;">
-                  {{ user_unread_count if user_unread_count < 100 else '99+' }}
-                </span>
-              {% endif %}
-            </a>
-          </li>
-          <li class="nav-item ms-lg-2">
-            <a class="btn btn-outline-light btn-sm" href="{{ url_for('auth.logout') }}">
-              <i class="bi bi-box-arrow-right me-1"></i>Logout
-            </a>
-          </li>
-        {% else %}
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('auth.login') }}">Login</a>
-          </li>
-          <li class="nav-item">
-            <a class="nav-link" href="{{ url_for('auth.register') }}">Register</a>
-          </li>
-        {% endif %}
-      </ul>
-    </div>
+    <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-people me-1"></i>Users
+    </a>
+    <a href="{{ url_for('admin.reports') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-bar-chart me-1"></i>Reports
+    </a>
   </div>
-</nav>
-
-<!-- Announcement Banners -->
-{% if active_announcements %}
-<div class="announcement-banners">
-  {% for ann in active_announcements %}
-  <div class="alert alert-info alert-dismissible fade show mb-0 rounded-0 border-0 border-bottom"
-       role="alert" style="border-color:#bee5eb!important;">
-    <div class="container d-flex align-items-start gap-2">
-      <i class="bi bi-megaphone-fill text-info mt-1 flex-shrink-0"></i>
-      <div>
-        <strong>{{ ann.Title }}</strong> — {{ ann.Message }}
-        <span class="text-muted small ms-2">{{ ann.CreatedAt.strftime('%d %b %Y') }}</span>
-      </div>
-      <button type="button" class="btn-close ms-auto" data-bs-dismiss="alert"></button>
-    </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
-
-<!-- Flash Messages -->
-<div class="container mt-3">
-  {% with messages = get_flashed_messages(with_categories=true) %}
-    {% if messages %}
-      {% for category, message in messages %}
-        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
-          {{ message }}
-          <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-      {% endfor %}
-    {% endif %}
-  {% endwith %}
 </div>
 
-<main class="container my-4">
-  {% block content %}{% endblock %}
-</main>
-
-<footer class="bg-light border-top py-3 mt-5 text-center text-muted small">
-  &copy; 2026 DUT Digital Grievance &amp; Complaint Portal
-</footer>
-
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
-<script src="{{ url_for('static', filename='js/file_validation.js') }}"></script>
-{% block extra_scripts %}{% endblock %}
+{# â”€â”€ KPI Stat Cards â”€â”€ #}
+{% set stat_cards = [
+  ('Total Users',   stats.total_users,   'bi-people-fill',         'primary',   'bg-primary bg-opacity-10 text-primary'),
+  ('Total Tickets', stats.total_tickets, 'bi-ticket-detailed-fill','secondary', 'bg-secondary bg-opacity-10 text-secondary'),
+  ('Open',          stats.submitted,     'bi-inbox-fill',          'warning',   'bg-warning bg-opacity-10 text-warning'),
+  ('Assigned',      stats.assigned,      'bi-person-check-fill',   'info',      'bg-info bg-opacity-10 text-info'),
+  ('In Progress',   stats.in_progress,   'bi-arrow-repeat',        'info',      'bg-info bg-opacity-10 text-info'),
+  ('Pending Info',  stats.pending_info,  'bi-question-circle-fill','warning',   'bg-warning bg-opacity-10 text-warning'),
+  ('Resolved',      stats.resolved,      'bi-check-circle-fill',   'success',   'bg-success bg-opacity-10 text-success'),
+  ('Rejected',      stats.rejected,      'bi-x-circle-fill',       'danger',    'bg-danger bg-opacity-10 text-danger'),
+] %}
 <div class="row g-3 mb-4">
-  {% set cards = [
-    ('Total Users',   stats.total_users,   'bi-people',          'primary'),
-    ('Total Tickets', stats.total_tickets, 'bi-ticket-detailed', 'secondary'),
-    ('Submitted',     stats.submitted,     'bi-inbox',           'secondary'),
-    ('Assigned',      stats.assigned,      'bi-person-check',    'primary'),
-    ('In Progress',   stats.in_progress,   'bi-arrow-repeat',    'info'),
-    ('Pending Info',  stats.pending_info,  'bi-question-circle', 'warning'),
-    ('Resolved',      stats.resolved,      'bi-check-circle',    'success'),
-    ('Rejected',      stats.rejected,      'bi-x-circle',        'danger'),
-  ] %}
-  {% for label, value, icon, colour in cards %}
+  {% for label, value, icon, colour, icon_cls in stat_cards %}
   <div class="col-6 col-md-3">
-    <div class="card border-0 shadow-sm h-100">
-      <div class="card-body d-flex align-items-center gap-3">
-        <div class="rounded-circle bg-{{ colour }} bg-opacity-10 p-3">
-          <i class="bi {{ icon }} fs-4 text-{{ colour }}"></i>
+    <div class="card border-0 shadow-sm stat-card h-100">
+      <div class="card-body d-flex align-items-center gap-3 p-3">
+        <div class="stat-icon-wrap {{ icon_cls }}">
+          <i class="bi {{ icon }}"></i>
         </div>
         <div>
-          <div class="fs-3 fw-bold">{{ value }}</div>
+          <div class="fs-2 fw-bold lh-1 mb-1">{{ value }}</div>
           <div class="small text-muted">{{ label }}</div>
         </div>
       </div>
@@ -181,37 +54,65 @@
   {% endfor %}
 </div>
 
+{# â”€â”€ Recent Tickets + Department Breakdown â”€â”€ #}
 <div class="row g-4 mb-4">
-  <!-- Recent Tickets -->
-  <div class="col-lg-8">
-    <div class="card border-0 shadow-sm">
-      <div class="card-header d-flex justify-content-between align-items-center">
-        <span class="fw-semibold"><i class="bi bi-clock-history me-1"></i>Recent Tickets</span>
-        <a href="{{ url_for('admin.tickets') }}" class="btn btn-sm btn-outline-primary">View All</a>
+
+  {# Recent Tickets #}
+  <div class="col-xl-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header d-flex justify-content-between align-items-center py-3">
+        <span class="fw-semibold"><i class="bi bi-clock-history me-1 text-primary"></i>Recent Tickets</span>
+        <a href="{{ url_for('admin.tickets') }}" class="btn btn-sm btn-outline-primary">
+          View All <i class="bi bi-arrow-right ms-1"></i>
+        </a>
       </div>
       <div class="table-responsive">
         <table class="table table-hover align-middle mb-0 small">
-          <thead class="table-light">
-            <tr><th>#</th><th>Title</th><th>Student</th><th>Status</th><th>Priority</th><th>Submitted</th></tr>
+          <thead>
+            <tr>
+              <th class="ps-3">#</th>
+              <th>Title</th>
+              <th class="d-none d-sm-table-cell">Student</th>
+              <th>Status</th>
+              <th class="d-none d-md-table-cell">Priority</th>
+              <th class="d-none d-lg-table-cell pe-3">Date</th>
+            </tr>
           </thead>
           <tbody>
-            {% from "macros/status_badge.html" import status_badge %}
             {% for t in recent_tickets %}
             <tr>
-              <td class="text-muted">#{{ t.TicketId }}</td>
+              <td class="text-muted ps-3">{{ t.TicketId }}</td>
               <td>
                 <a href="{{ url_for('admin.ticket_detail', ticket_id=t.TicketId) }}"
-                   class="text-decoration-none fw-semibold">{{ t.Title }}</a>
-              </td>
-              <td>{{ t.student.FullName if t.student else '—' }}</td>
-              <td>{{ status_badge(t.Status.value) }}</td>
-              <td>
-                {% if t.Priority.value == 'High' %}     <span class="badge bg-danger">High</span>
-                {% elif t.Priority.value == 'Medium' %} <span class="badge bg-warning text-dark">Medium</span>
-                {% else %}                              <span class="badge bg-success">Low</span>
+                   class="text-decoration-none fw-medium">
+                  {{ t.Title | truncate(45, true) }}
+                </a>
+                {% if t.TrackingRef %}
+                  <div class="text-muted" style="font-size:.7rem;font-family:monospace;">{{ t.TrackingRef }}</div>
                 {% endif %}
               </td>
-              <td class="text-muted">{{ t.CreatedAt.strftime('%d %b %Y') }}</td>
+              <td class="d-none d-sm-table-cell text-muted">
+                {{ t.student.FullName if t.student else 'â€”' }}
+              </td>
+              <td>{{ status_badge(t.Status.value) }}</td>
+              <td class="d-none d-md-table-cell">
+                {% if t.Priority.value == 'High' %}
+                  <span class="badge bg-danger">High</span>
+                {% elif t.Priority.value == 'Medium' %}
+                  <span class="badge bg-warning text-dark">Medium</span>
+                {% else %}
+                  <span class="badge bg-success">Low</span>
+                {% endif %}
+              </td>
+              <td class="d-none d-lg-table-cell text-muted pe-3">
+                {{ t.CreatedAt.strftime('%d %b %Y') }}
+              </td>
+            </tr>
+            {% else %}
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">
+                <i class="bi bi-inbox fs-3 d-block mb-2"></i>No tickets yet.
+              </td>
             </tr>
             {% endfor %}
           </tbody>
@@ -220,28 +121,34 @@
     </div>
   </div>
 
-  <!-- Dept Breakdown -->
-  <div class="col-lg-4">
+  {# Department Breakdown #}
+  <div class="col-xl-4">
     <div class="card border-0 shadow-sm h-100">
-      <div class="card-header fw-semibold">
-        <i class="bi bi-building me-1"></i>By Department
+      <div class="card-header py-3 fw-semibold">
+        <i class="bi bi-building me-1 text-primary"></i>By Department
       </div>
-      <ul class="list-group list-group-flush">
+      <ul class="list-group list-group-flush" style="max-height:360px;overflow-y:auto;">
         {% for ds in dept_stats %}
-        <li class="list-group-item">
+        <li class="list-group-item px-3 py-2">
           <div class="d-flex justify-content-between align-items-center mb-1">
             <a href="{{ url_for('admin.department_detail', dept_id=ds.dept.DepartmentId) }}"
-               class="text-decoration-none fw-semibold small">{{ ds.dept.Name }}</a>
-            <span class="small text-muted">{{ ds.total }} total</span>
+               class="text-decoration-none fw-medium small">{{ ds.dept.Name }}</a>
+            <span class="badge bg-secondary bg-opacity-25 text-secondary small">
+              {{ ds.total }}
+            </span>
           </div>
-          <div class="progress" style="height:6px;">
+          <div class="progress rounded-pill" style="height:5px;">
             {% set pct = ((ds.resolved / ds.total * 100) | int) if ds.total else 0 %}
-            <div class="progress-bar bg-success" style="width:{{ pct }}%"></div>
+            <div class="progress-bar bg-success rounded-pill" style="width:{{ pct }}%"></div>
           </div>
           <div class="d-flex justify-content-between mt-1" style="font-size:0.7rem;">
-            <span class="text-danger">{{ ds.open }} open</span>
-            <span class="text-success">{{ ds.resolved }} resolved</span>
+            <span class="text-danger"><i class="bi bi-circle-fill me-1"></i>{{ ds.open }} open</span>
+            <span class="text-success"><i class="bi bi-circle-fill me-1"></i>{{ ds.resolved }} resolved</span>
           </div>
+        </li>
+        {% else %}
+        <li class="list-group-item text-center text-muted py-4">
+          <i class="bi bi-building-x d-block mb-2 fs-3"></i>No departments yet.
         </li>
         {% endfor %}
       </ul>
@@ -249,5 +156,24 @@
   </div>
 </div>
 
-</body>
-</html>
+{# â”€â”€ Quick Links â”€â”€ #}
+<div class="row g-3">
+  {% set quick = [
+    ('Add User',           'admin.add_user',       'bi-person-plus',      'btn-outline-primary'),
+    ('Add Department',     'admin.departments',     'bi-building-add',     'btn-outline-secondary'),
+    ('Post Announcement',  'admin.announcements',   'bi-megaphone',        'btn-outline-info'),
+    ('View Reports',       'admin.reports',         'bi-bar-chart-line',   'btn-outline-success'),
+    ('Audit Logs',         'admin.audit_logs',      'bi-journal-text',     'btn-outline-warning'),
+  ] %}
+  {% for label, endpoint, icon, btn_cls in quick %}
+  <div class="col-6 col-sm-4 col-md-3 col-lg-2">
+    <a href="{{ url_for(endpoint) }}"
+       class="btn {{ btn_cls }} w-100 d-flex flex-column align-items-center py-3 gap-1">
+      <i class="bi {{ icon }} fs-4"></i>
+      <span class="small fw-medium">{{ label }}</span>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}
