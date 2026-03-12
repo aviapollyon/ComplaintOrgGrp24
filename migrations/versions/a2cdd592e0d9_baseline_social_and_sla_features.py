@@ -1,8 +1,8 @@
-"""Add SubCategory to tickets
+"""baseline social and sla features
 
-Revision ID: c7c18cc8569f
+Revision ID: a2cdd592e0d9
 Revises: 
-Create Date: 2026-03-09 12:54:12.839764
+Create Date: 2026-03-12 13:14:58.520720
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'c7c18cc8569f'
+revision = 'a2cdd592e0d9'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -45,6 +45,8 @@ def upgrade():
     sa.Column('IsActive', sa.Boolean(), nullable=False),
     sa.Column('CreatedAt', sa.DateTime(), nullable=True),
     sa.Column('UpdatedAt', sa.DateTime(), nullable=True),
+    sa.Column('POPIAConsent', sa.Boolean(), nullable=False),
+    sa.Column('POPIAConsentAt', sa.DateTime(), nullable=True),
     sa.ForeignKeyConstraint(['DepartmentId'], ['departments.DepartmentId'], name='fk_users_department_id'),
     sa.PrimaryKeyConstraint('UserId'),
     sa.UniqueConstraint('Email')
@@ -60,6 +62,18 @@ def upgrade():
     sa.ForeignKeyConstraint(['CreatedBy'], ['users.UserId'], name='fk_announcements_created_by'),
     sa.PrimaryKeyConstraint('AnnouncementId')
     )
+    op.create_table('audit_logs',
+    sa.Column('LogId', sa.Integer(), nullable=False),
+    sa.Column('ActorId', sa.Integer(), nullable=True),
+    sa.Column('Action', sa.String(length=100), nullable=False),
+    sa.Column('TargetType', sa.String(length=50), nullable=True),
+    sa.Column('TargetId', sa.Integer(), nullable=True),
+    sa.Column('Details', sa.Text(), nullable=True),
+    sa.Column('IPAddress', sa.String(length=45), nullable=True),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['ActorId'], ['users.UserId'], name='fk_audit_log_actor'),
+    sa.PrimaryKeyConstraint('LogId')
+    )
     op.create_table('tickets',
     sa.Column('TicketId', sa.Integer(), nullable=False),
     sa.Column('StudentId', sa.Integer(), nullable=False),
@@ -69,6 +83,7 @@ def upgrade():
     sa.Column('Description', sa.Text(), nullable=False),
     sa.Column('Category', sa.String(length=100), nullable=False),
     sa.Column('SubCategory', sa.String(length=100), nullable=True),
+    sa.Column('TrackingRef', sa.String(length=20), nullable=True),
     sa.Column('Priority', sa.Enum('High', 'Medium', 'Low', name='priorityenum'), nullable=False),
     sa.Column('Status', sa.Enum('Submitted', 'Assigned', 'InProgress', 'PendingInfo', 'Resolved', 'Rejected', name='statusenum'), nullable=False),
     sa.Column('CreatedAt', sa.DateTime(), nullable=True),
@@ -81,6 +96,19 @@ def upgrade():
     sa.ForeignKeyConstraint(['StudentId'], ['users.UserId'], name='fk_tickets_student_id'),
     sa.PrimaryKeyConstraint('TicketId')
     )
+    with op.batch_alter_table('tickets', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_tickets_TrackingRef'), ['TrackingRef'], unique=True)
+
+    op.create_table('user_preferences',
+    sa.Column('PreferenceId', sa.Integer(), nullable=False),
+    sa.Column('UserId', sa.Integer(), nullable=False),
+    sa.Column('SuppressSocialNotifications', sa.Boolean(), nullable=False),
+    sa.ForeignKeyConstraint(['UserId'], ['users.UserId'], name='fk_user_preferences_user_id'),
+    sa.PrimaryKeyConstraint('PreferenceId')
+    )
+    with op.batch_alter_table('user_preferences', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_user_preferences_UserId'), ['UserId'], unique=True)
+
     op.create_table('admin_notifications',
     sa.Column('NotificationId', sa.Integer(), nullable=False),
     sa.Column('Type', sa.String(length=50), nullable=False),
@@ -139,6 +167,20 @@ def upgrade():
     sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_reopen_ticket'),
     sa.PrimaryKeyConstraint('RequestId')
     )
+    op.create_table('ticket_comments',
+    sa.Column('CommentId', sa.Integer(), nullable=False),
+    sa.Column('TicketId', sa.Integer(), nullable=False),
+    sa.Column('UserId', sa.Integer(), nullable=False),
+    sa.Column('Content', sa.Text(), nullable=False),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_ticket_comments_ticket_id'),
+    sa.ForeignKeyConstraint(['UserId'], ['users.UserId'], name='fk_ticket_comments_user_id'),
+    sa.PrimaryKeyConstraint('CommentId')
+    )
+    with op.batch_alter_table('ticket_comments', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_ticket_comments_TicketId'), ['TicketId'], unique=False)
+        batch_op.create_index(batch_op.f('ix_ticket_comments_UserId'), ['UserId'], unique=False)
+
     op.create_table('ticket_updates',
     sa.Column('UpdateId', sa.Integer(), nullable=False),
     sa.Column('TicketId', sa.Integer(), nullable=False),
@@ -153,6 +195,20 @@ def upgrade():
     sa.ForeignKeyConstraint(['UserId'], ['users.UserId'], name='fk_updates_user_id'),
     sa.PrimaryKeyConstraint('UpdateId')
     )
+    op.create_table('ticket_votes',
+    sa.Column('VoteId', sa.Integer(), nullable=False),
+    sa.Column('TicketId', sa.Integer(), nullable=False),
+    sa.Column('UserId', sa.Integer(), nullable=False),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['TicketId'], ['tickets.TicketId'], name='fk_ticket_votes_ticket_id'),
+    sa.ForeignKeyConstraint(['UserId'], ['users.UserId'], name='fk_ticket_votes_user_id'),
+    sa.PrimaryKeyConstraint('VoteId'),
+    sa.UniqueConstraint('TicketId', 'UserId', name='uq_ticket_vote_user_ticket')
+    )
+    with op.batch_alter_table('ticket_votes', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_ticket_votes_TicketId'), ['TicketId'], unique=False)
+        batch_op.create_index(batch_op.f('ix_ticket_votes_UserId'), ['UserId'], unique=False)
+
     op.create_table('user_notifications',
     sa.Column('NotificationId', sa.Integer(), nullable=False),
     sa.Column('UserId', sa.Integer(), nullable=False),
@@ -177,20 +233,57 @@ def upgrade():
     sa.ForeignKeyConstraint(['UpdateId'], ['ticket_updates.UpdateId'], name='fk_attachments_update_id'),
     sa.PrimaryKeyConstraint('AttachmentId')
     )
+    op.create_table('comment_votes',
+    sa.Column('VoteId', sa.Integer(), nullable=False),
+    sa.Column('CommentId', sa.Integer(), nullable=False),
+    sa.Column('UserId', sa.Integer(), nullable=False),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=False),
+    sa.ForeignKeyConstraint(['CommentId'], ['ticket_comments.CommentId'], name='fk_comment_votes_comment_id'),
+    sa.ForeignKeyConstraint(['UserId'], ['users.UserId'], name='fk_comment_votes_user_id'),
+    sa.PrimaryKeyConstraint('VoteId'),
+    sa.UniqueConstraint('CommentId', 'UserId', name='uq_comment_vote_user_comment')
+    )
+    with op.batch_alter_table('comment_votes', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_comment_votes_CommentId'), ['CommentId'], unique=False)
+        batch_op.create_index(batch_op.f('ix_comment_votes_UserId'), ['UserId'], unique=False)
+
     # ### end Alembic commands ###
 
 
 def downgrade():
     # ### commands auto generated by Alembic - please adjust! ###
+    with op.batch_alter_table('comment_votes', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_comment_votes_UserId'))
+        batch_op.drop_index(batch_op.f('ix_comment_votes_CommentId'))
+
+    op.drop_table('comment_votes')
     op.drop_table('attachments')
     op.drop_table('user_notifications')
+    with op.batch_alter_table('ticket_votes', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_ticket_votes_UserId'))
+        batch_op.drop_index(batch_op.f('ix_ticket_votes_TicketId'))
+
+    op.drop_table('ticket_votes')
     op.drop_table('ticket_updates')
+    with op.batch_alter_table('ticket_comments', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_ticket_comments_UserId'))
+        batch_op.drop_index(batch_op.f('ix_ticket_comments_TicketId'))
+
+    op.drop_table('ticket_comments')
     op.drop_table('reopen_requests')
     op.drop_table('reassignment_requests')
     op.drop_table('flagged_tickets')
     op.drop_table('escalation_requests')
     op.drop_table('admin_notifications')
+    with op.batch_alter_table('user_preferences', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_user_preferences_UserId'))
+
+    op.drop_table('user_preferences')
+    with op.batch_alter_table('tickets', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_tickets_TrackingRef'))
+
     op.drop_table('tickets')
+    op.drop_table('audit_logs')
     op.drop_table('announcements')
     op.drop_table('users')
     op.drop_table('ticket_flags')

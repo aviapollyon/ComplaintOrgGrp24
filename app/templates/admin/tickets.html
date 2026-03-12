@@ -106,12 +106,12 @@
       <thead class="table-light">
         <tr>
           <th>#</th><th>Title</th><th>Reference</th><th>Student</th><th>Staff</th>
-          <th>Dept</th><th>Priority</th><th>Status</th><th>Submitted</th><th></th>
+          <th>Dept</th><th>Priority</th><th>Community</th><th>Status</th><th>Submitted</th><th></th>
         </tr>
       </thead>
       <tbody>
         {% for t in tickets %}
-        <tr>
+        <tr class="{% if t.is_resolution_sla_overdue %}table-danger{% elif t.is_response_sla_overdue %}table-warning{% endif %}">
           <td class="text-muted">#{{ t.TicketId }}</td>
           <td class="fw-semibold">{{ t.Title }}</td>
           <td>
@@ -130,6 +130,10 @@
             {% elif t.Priority.value == 'Medium' %} <span class="badge bg-warning text-dark">Medium</span>
             {% else %}                              <span class="badge bg-success">Low</span>
             {% endif %}
+          </td>
+          <td class="small">
+            <span class="me-2"><i class="bi bi-hand-thumbs-up"></i> {{ t.vote_count }}</span>
+            <span><i class="bi bi-chat-dots"></i> {{ t.comment_count }}</span>
           </td>
           <td>
             {% set s = t.Status.value %}

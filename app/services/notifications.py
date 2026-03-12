@@ -23,6 +23,14 @@ def notify(user_id: int, title: str, message: str,
     ))
 
 
+def _notification_exists(user_id: int, notif_type: str, ticket_id: int) -> bool:
+    return db.session.query(UserNotification.NotificationId).filter_by(
+        UserId=user_id,
+        Type=notif_type,
+        TicketId=ticket_id,
+    ).first() is not None
+
+
 def _send_email(recipient_email: str, subject: str, body: str):
     """
     Build a plain-text email and send it synchronously.
@@ -235,6 +243,84 @@ def notify_progress_update(ticket, staff_user):
         _get_user_email(ticket.StudentId),
         title,
         f'{message}\n\nLog in to view the update: /student/dashboard',
+    )
+
+
+def notify_sla_breach(ticket, breach_type: str):
+    """Notify assigned staff and all admins when SLA thresholds are exceeded."""
+    from flask import current_app
+    from app.models.user import User, RoleEnum
+
+    if breach_type not in ('first_response', 'resolution'):
+        return
+
+    if breach_type == 'first_response':
+        notif_type = 'sla_first_response_breach'
+        label = 'First Response (24h)'
+    else:
+        notif_type = 'sla_resolution_breach'
+        label = 'Resolution (48h)'
+
+    title = f'SLA Breach: {label} — Ticket #{ticket.TicketId}'
+    message = (
+        f'Ticket "{ticket.Title}" exceeded the {label} SLA threshold. '
+        f'Reference: {ticket.TrackingRef or "N/A"}.'
+    )
+    send_sla_email = current_app.config.get('SLA_EMAIL_ENABLED', True)
+
+    if ticket.StaffId and not _notification_exists(ticket.StaffId, notif_type, ticket.TicketId):
+        notify(ticket.StaffId, title, message, notif_type, ticket.TicketId)
+        if send_sla_email:
+            _send_email(
+                _get_user_email(ticket.StaffId),
+                title,
+                f'{message}\n\nOpen: /staff/ticket/{ticket.TicketId}',
+            )
+
+    admins = User.query.filter_by(Role=RoleEnum.Admin, IsActive=True).all()
+    for admin in admins:
+        if _notification_exists(admin.UserId, notif_type, ticket.TicketId):
+            continue
+        notify(admin.UserId, title, message, notif_type, ticket.TicketId)
+        if send_sla_email:
+            _send_email(
+                admin.Email or '',
+                title,
+                f'{message}\n\nOpen: /admin/tickets/{ticket.TicketId}',
+            )
+
+
+def notify_social_vote(ticket, voter):
+    from app.models.user_preference import UserPreference
+
+    pref = UserPreference.query.filter_by(UserId=ticket.StudentId).first()
+    if pref and pref.SuppressSocialNotifications:
+        return
+
+    title = f'New Support Vote — Ticket #{ticket.TicketId}'
+    message = f'{voter.FullName} supported your ticket "{ticket.Title}".'
+    notify(ticket.StudentId, title, message, 'ticket_vote', ticket.TicketId)
+    _send_email(
+        _get_user_email(ticket.StudentId),
+        title,
+        f'{message}\n\nView ticket: /student/ticket/{ticket.TicketId}',
+    )
+
+
+def notify_social_comment(ticket, commenter):
+    from app.models.user_preference import UserPreference
+
+    pref = UserPreference.query.filter_by(UserId=ticket.StudentId).first()
+    if pref and pref.SuppressSocialNotifications:
+        return
+
+    title = f'New Student Comment — Ticket #{ticket.TicketId}'
+    message = f'{commenter.FullName} commented on your ticket "{ticket.Title}".'
+    notify(ticket.StudentId, title, message, 'ticket_comment', ticket.TicketId)
+    _send_email(
+        _get_user_email(ticket.StudentId),
+        title,
+        f'{message}\n\nView ticket: /student/ticket/{ticket.TicketId}',
     )
 
 

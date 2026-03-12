@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "macros/pagination.html" import render_pagination %}
+{% block title %}Student Community Complaints{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <h3 class="mb-0"><i class="bi bi-people me-2 text-primary"></i>Other Student Complaints</h3>
+  <a href="{{ url_for('student.dashboard') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to My Dashboard
+  </a>
+</div>
+
+<div class="row g-3">
+  {% for ticket in tickets %}
+  <div class="col-12 col-md-6">
+    <article class="card border-0 shadow-sm h-100">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <div class="fw-semibold">{{ ticket.student.FullName if ticket.student else 'Student' }}</div>
+            <div class="small text-muted">{{ ticket.CreatedAt.strftime('%d %b %Y %H:%M') }}</div>
+          </div>
+          <span class="badge bg-secondary">{{ ticket.Category }}</span>
+        </div>
+
+        <h6 class="mb-2">{{ ticket.Title }}</h6>
+        <p class="small text-muted mb-3">{{ ticket.Description[:220] }}{% if ticket.Description|length > 220 %}...{% endif %}</p>
+
+        <div class="d-flex align-items-center gap-3 small mb-2">
+          <form method="POST" action="{{ url_for('student.vote_ticket', ticket_id=ticket.TicketId) }}" class="d-inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+            <button type="submit" class="btn btn-sm {{ 'btn-primary' if ticket.TicketId in my_ticket_votes else 'btn-outline-primary' }}">
+              <i class="bi bi-hand-thumbs-up"></i> {{ ticket.vote_count }}
+            </button>
+          </form>
+          <span><i class="bi bi-chat-dots"></i> {{ ticket.comment_count }}</span>
+          <span class="ms-auto">
+            {% if ticket.Priority.value == 'High' %}<span class="badge bg-danger">High</span>
+            {% elif ticket.Priority.value == 'Medium' %}<span class="badge bg-warning text-dark">Medium</span>
+            {% else %}<span class="badge bg-success">Low</span>{% endif %}
+          </span>
+        </div>
+
+        <form method="POST" action="{{ url_for('student.add_ticket_comment', ticket_id=ticket.TicketId) }}" class="mb-3">
+          {{ comment_form.hidden_tag() }}
+          {{ comment_form.content(class="form-control form-control-sm mb-2", rows=2, placeholder="Add a comment...") }}
+          <button type="submit" class="btn btn-sm btn-outline-secondary">
+            <i class="bi bi-chat-left-text me-1"></i>Comment
+          </button>
+        </form>
+
+        <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}"
+           class="btn btn-sm btn-outline-primary">
+          <i class="bi bi-eye me-1"></i>Open Ticket
+        </a>
+      </div>
+    </article>
+  </div>
+  {% else %}
+  <div class="col-12">
+    <div class="card border-0 shadow-sm">
+      <div class="card-body text-center text-muted py-5">
+        <i class="bi bi-inbox display-5 d-block mb-2"></i>
+        No community complaints are available yet.
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+{{ render_pagination(pagination) }}
+{% endblock %}

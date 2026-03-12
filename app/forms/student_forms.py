@@ -2,7 +2,7 @@ from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed
 from wtforms import (
     StringField, TextAreaField, SelectField,
-    SubmitField, IntegerField, MultipleFileField
+    SubmitField, IntegerField, MultipleFileField, BooleanField
 )
 from wtforms.validators import DataRequired, Length, NumberRange, Optional
 from app.utils.helpers import TICKET_CATEGORIES, CATEGORY_SUBCATEGORY_MAP
@@ -147,3 +147,17 @@ class ReopenRequestForm(FlaskForm):
                    "placeholder": "Explain why you believe this ticket should be reopened..."}
     )
     submit = SubmitField('Request Reopen')
+
+
+class TicketCommentForm(FlaskForm):
+    content = TextAreaField(
+        'Comment',
+        validators=[DataRequired(), Length(min=2, max=500)],
+        render_kw={"rows": 3, "placeholder": "Add your comment..."}
+    )
+    submit = SubmitField('Post Comment')
+
+
+class SocialPreferenceForm(FlaskForm):
+    suppress_social = BooleanField('Disable notifications for social votes and comments')
+    submit = SubmitField('Save Preference')

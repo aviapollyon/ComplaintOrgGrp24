@@ -48,6 +48,20 @@ class UpdateTicketForm(FlaskForm):
     submit  = SubmitField('Update Ticket')
 
 
+class UpdatePriorityForm(FlaskForm):
+    priority = SelectField(
+        'Priority',
+        choices=[('High', 'High'), ('Medium', 'Medium'), ('Low', 'Low')],
+        validators=[DataRequired()]
+    )
+    reason = TextAreaField(
+        'Reason for Priority Change',
+        validators=[DataRequired(), Length(min=5, max=500)],
+        render_kw={"rows": 3, "placeholder": "Why this priority level was selected..."}
+    )
+    submit = SubmitField('Update Priority')
+
+
 class ResolveTicketForm(FlaskForm):
     resolution = TextAreaField('Resolution Details',
                                validators=[DataRequired(), Length(min=10, max=3000)],

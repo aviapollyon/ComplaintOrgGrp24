@@ -24,6 +24,10 @@ from app.models.ticket             import Ticket, StatusEnum, PriorityEnum
 from app.models.ticket_update      import TicketUpdate, UpdateStatusEnum
 from app.models.announcement       import Announcement
 from app.models.admin_notification import AdminNotification
+from app.models.ticket_vote         import TicketVote
+from app.models.ticket_comment      import TicketComment
+from app.models.comment_vote        import CommentVote
+from app.models.user_preference     import UserPreference
 from app.utils.helpers             import check_and_raise_flags
 from app.services.notifications    import (
     notify_ticket_assigned,
@@ -35,8 +39,12 @@ from app.services.notifications    import (
 )
 from datetime import datetime, timedelta
 import random
+import os
+
+os.environ['MAIL_SUPPRESS_SEND'] = 'true'
 
 app = create_app('development')
+app.config['MAIL_SUPPRESS_SEND'] = True
 
 
 # ── helpers ─────────────────────��─────────────────────────────────────────────
@@ -176,13 +184,13 @@ with app.app_context():
     # ── 4. Students ───────────────────────────────────────────────────────────
     student_data = [
         ('Ayanda Mthembu',  '22218367@dut4life.ac.za',  'Student@1234'),
-        ('Keegan Peters',   'keegan.peters@student.dut.ac.za',   'Student@1234'),
-        ('Zanele Ntuli',    'zanele.ntuli@student.dut.ac.za',    'Student@1234'),
-        ('Rishi Naidoo',    'rishi.naidoo@student.dut.ac.za',    'Student@1234'),
-        ('Chloe van Wyk',   'chloe.vanwyk@student.dut.ac.za',   'Student@1234'),
-        ('Lethiwe Cele',    'lethiwe.cele@student.dut.ac.za',    'Student@1234'),
-        ('Mohammed Cassim', 'mohammed.cassim@student.dut.ac.za', 'Student@1234'),
-        ('Tayla Botha',     'tayla.botha@student.dut.ac.za',     'Student@1234'),
+        ('Keegan Peters',   'keegan.example@dut4life.ac.za',     'Student@1234'),
+        ('Zanele Ntuli',    'zanele.example@dut4life.ac.za',     'Student@1234'),
+        ('Rishi Naidoo',    'rishi.example@dut4life.ac.za',      'Student@1234'),
+        ('Chloe van Wyk',   'chloe.example@dut4life.ac.za',      'Student@1234'),
+        ('Lethiwe Cele',    'lethiwe.example@dut4life.ac.za',    'Student@1234'),
+        ('Mohammed Cassim', 'mohammed.example@dut4life.ac.za',   'Student@1234'),
+        ('Tayla Botha',     'tayla.example@dut4life.ac.za',      'Student@1234'),
     ]
     student_users = {}
     for full_name, email, pw in student_data:
@@ -193,13 +201,13 @@ with app.app_context():
         student_users[email] = u
 
     ayanda   = student_users['22218367@dut4life.ac.za']
-    keegan   = student_users['keegan.peters@student.dut.ac.za']
-    zanele   = student_users['zanele.ntuli@student.dut.ac.za']
-    rishi    = student_users['rishi.naidoo@student.dut.ac.za']
-    chloe    = student_users['chloe.vanwyk@student.dut.ac.za']
-    lethiwe  = student_users['lethiwe.cele@student.dut.ac.za']
-    mohammed = student_users['mohammed.cassim@student.dut.ac.za']
-    tayla    = student_users['tayla.botha@student.dut.ac.za']
+    keegan   = student_users['keegan.example@dut4life.ac.za']
+    zanele   = student_users['zanele.example@dut4life.ac.za']
+    rishi    = student_users['rishi.example@dut4life.ac.za']
+    chloe    = student_users['chloe.example@dut4life.ac.za']
+    lethiwe  = student_users['lethiwe.example@dut4life.ac.za']
+    mohammed = student_users['mohammed.example@dut4life.ac.za']
+    tayla    = student_users['tayla.example@dut4life.ac.za']
 
     # =========================================================================
     # 5. TICKETS  (25 total — all 14 categories, flag triggers included)
@@ -665,6 +673,58 @@ with app.app_context():
                 CreatedAt=days_ago(random.randint(1, 10)),
             ))
 
+    # ── 8. Social interactions (votes, comments, comment upvotes) ───────────
+    social_votes = [
+        (t2, keegan),
+        (t2, chloe),
+        (t3, ayanda),
+        (t10, rishi),
+        (t10, keegan),
+        (t21, tayla),
+        (t21, mohammed),
+        (t24, ayanda),
+    ]
+    for ticket, voter in social_votes:
+        exists = TicketVote.query.filter_by(TicketId=ticket.TicketId, UserId=voter.UserId).first()
+        if not exists and ticket.StudentId != voter.UserId:
+            db.session.add(TicketVote(TicketId=ticket.TicketId, UserId=voter.UserId))
+
+    social_comments = [
+        (t2, keegan, 'I have a similar timetable issue, please keep us updated.'),
+        (t2, chloe, 'This affects my class too. Supporting this complaint.'),
+        (t10, ayanda, 'E-Block was extremely hot this week. Thank you for logging this.'),
+        (t21, mohammed, 'Shuttle delays made me miss practical sessions as well.'),
+        (t24, zanele, 'Our lab also freezes after the latest update.'),
+    ]
+    created_comments = []
+    for ticket, author, content in social_comments:
+        exists = TicketComment.query.filter_by(
+            TicketId=ticket.TicketId,
+            UserId=author.UserId,
+            Content=content,
+        ).first()
+        if not exists and ticket.StudentId != author.UserId:
+            comment = TicketComment(TicketId=ticket.TicketId, UserId=author.UserId, Content=content)
+            db.session.add(comment)
+            db.session.flush()
+            created_comments.append(comment)
+
+    for c in created_comments:
+        upvoters = [u for u in [ayanda, keegan, zanele, rishi, chloe, lethiwe, mohammed, tayla] if u.UserId != c.UserId][:2]
+        for voter in upvoters:
+            exists = CommentVote.query.filter_by(CommentId=c.CommentId, UserId=voter.UserId).first()
+            if not exists:
+                db.session.add(CommentVote(CommentId=c.CommentId, UserId=voter.UserId))
+
+    # Social notification preferences (configurable suppression)
+    for user_obj, suppress in [(ayanda, True), (keegan, False), (chloe, True)]:
+        pref = UserPreference.query.filter_by(UserId=user_obj.UserId).first()
+        if not pref:
+            pref = UserPreference(UserId=user_obj.UserId, SuppressSocialNotifications=suppress)
+            db.session.add(pref)
+        else:
+            pref.SuppressSocialNotifications = suppress
+
     db.session.commit()
 
     # ── Print summary ─────────────────────────────────────────────────────────
@@ -674,7 +734,7 @@ with app.app_context():
 
     print('\n── ADMIN ───────────────────────────────────────────────────────────')
     print(f'  {"Email":<45} Password')
-    print(f'  {"admin@dut.ac.za":<45} Admin@1234')
+    print(f'  {"aviapollyonc@gmail.com":<45} Admin@1234')
 
     print('\n── STAFF ───────────────���───────────────────────────────────────────')
     print(f'  {"Email":<45} {"Password":<14} Department')

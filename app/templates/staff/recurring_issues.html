@@ -1,0 +1,110 @@
+{% extends "base.html" %}
+{% from "macros/pagination.html" import render_pagination %}
+{% block title %}Recurring Issues - Staff{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
+  <div>
+    <h4 class="mb-1 fw-bold"><i class="bi bi-flag-fill text-danger me-2"></i>Recurring Issues</h4>
+    <p class="text-muted small mb-0">Repeated patterns from tickets assigned to you.</p>
+  </div>
+  <a href="{{ url_for('staff.dashboard') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+<div class="card border-0 shadow-sm mb-4">
+  <div class="card-body">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-md-4 col-lg-3">
+        <label class="form-label small fw-semibold">Status</label>
+        <select name="status" class="form-select form-select-sm">
+          <option value="all" {% if status == 'all' %}selected{% endif %}>All</option>
+          <option value="active" {% if status == 'active' %}selected{% endif %}>Active</option>
+          <option value="dismissed" {% if status == 'dismissed' %}selected{% endif %}>Dismissed</option>
+        </select>
+      </div>
+      <div class="col-md-3 col-lg-2">
+        <label class="form-label small fw-semibold">Per Page</label>
+        <select name="per_page" class="form-select form-select-sm">
+          {% for n in [10, 15, 25, 50, 100] %}
+          <option value="{{ n }}" {% if request.args.get('per_page', '15') == n|string %}selected{% endif %}>{{ n }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-auto">
+        <button type="submit" class="btn btn-primary btn-sm">
+          <i class="bi bi-funnel me-1"></i>Apply
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% if flags %}
+<div class="card border-0 shadow-sm">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>#</th>
+          <th>Category</th>
+          <th>Keyword</th>
+          <th>Your Linked Tickets</th>
+          <th>Status</th>
+          <th>Updated</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for flag in flags %}
+        <tr>
+          <td class="text-muted small">#{{ flag.FlagId }}</td>
+          <td><span class="badge bg-secondary">{{ flag.Category }}</span></td>
+          <td><span class="fw-semibold">{{ flag.Keyword }}</span></td>
+          <td>
+            <span class="badge bg-light text-dark border">
+              {{ linked_counts.get(flag.FlagId, 0) }} linked
+            </span>
+          </td>
+          <td>
+            {% if flag.Status == 'active' %}
+              <span class="badge bg-danger">Active</span>
+            {% else %}
+              <span class="badge bg-success">Dismissed</span>
+            {% endif %}
+          </td>
+          <td class="small text-muted">{{ flag.UpdatedAt.strftime('%d %b %Y %H:%M') if flag.UpdatedAt else '-' }}</td>
+          <td class="text-end">
+            <a href="{{ url_for('staff.recurring_issue_tickets', flag_id=flag.FlagId) }}" class="btn btn-sm btn-outline-primary me-1">
+              <i class="bi bi-list-check me-1"></i>View Tickets
+            </a>
+            {% if flag.Status == 'active' %}
+            <form method="POST" action="{{ url_for('staff.dismiss_flag', flag_id=flag.FlagId) }}" class="d-inline">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+              <input type="hidden" name="next" value="{{ request.full_path }}"/>
+              <button type="submit" class="btn btn-sm btn-outline-danger">
+                <i class="bi bi-x-octagon me-1"></i>Dismiss
+              </button>
+            </form>
+            {% else %}
+              <span class="text-muted small">Dismissed</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% else %}
+<div class="card border-0 shadow-sm">
+  <div class="card-body text-center text-muted py-5">
+    <i class="bi bi-flag display-5 d-block mb-2"></i>
+    No recurring issues linked to your tickets yet.
+  </div>
+</div>
+{% endif %}
+
+{{ render_pagination(pagination) }}
+{% endblock %}

@@ -49,6 +49,11 @@ class Config:
     # Flask-Mail: only suppress if explicitly set to 'true' in env
     MAIL_SUPPRESS_SEND = os.environ.get('MAIL_SUPPRESS_SEND', 'false').lower() == 'true'
 
+    # Background SLA monitor
+    SLA_MONITOR_ENABLED = os.environ.get('SLA_MONITOR_ENABLED', 'true').lower() == 'true'
+    SLA_MONITOR_INTERVAL_SECONDS = int(os.environ.get('SLA_MONITOR_INTERVAL_SECONDS', 300))
+    SLA_EMAIL_ENABLED = os.environ.get('SLA_EMAIL_ENABLED', 'true').lower() == 'false'
+
 
 # Development environment configuration
 class DevelopmentConfig(Config):

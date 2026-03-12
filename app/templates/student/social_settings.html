@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Social Settings{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-7">
+    <div class="card border-0 shadow-sm">
+      <div class="card-header">
+        <h5 class="mb-0"><i class="bi bi-sliders me-1"></i>Social Notification Settings</h5>
+      </div>
+      <div class="card-body">
+        <p class="text-muted small">
+          Control whether you receive notifications when other students vote or comment on your tickets.
+        </p>
+        <form method="POST" novalidate>
+          {{ form.hidden_tag() }}
+          <div class="form-check form-switch mb-3">
+            {{ form.suppress_social(class="form-check-input", id="suppressSocial") }}
+            {{ form.suppress_social.label(class="form-check-label") }}
+          </div>
+          {{ form.submit(class="btn btn-primary") }}
+          <a href="{{ url_for('student.dashboard') }}" class="btn btn-outline-secondary ms-2">Back</a>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

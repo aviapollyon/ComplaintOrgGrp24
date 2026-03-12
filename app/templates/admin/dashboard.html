@@ -16,6 +16,9 @@
     <a href="{{ url_for('admin.tickets') }}" class="btn btn-outline-primary btn-sm">
       <i class="bi bi-ticket-detailed me-1"></i>All Tickets
     </a>
+    <a href="{{ url_for('admin.recurring_issues') }}" class="btn btn-outline-danger btn-sm">
+      <i class="bi bi-flag-fill me-1"></i>Recurring Issues
+    </a>
     <a href="{{ url_for('admin.users') }}" class="btn btn-outline-secondary btn-sm">
       <i class="bi bi-people me-1"></i>Users
     </a>
@@ -161,6 +164,7 @@
   {% set quick = [
     ('Add User',           'admin.add_user',       'bi-person-plus',      'btn-outline-primary'),
     ('Add Department',     'admin.departments',     'bi-building-add',     'btn-outline-secondary'),
+    ('Recurring Issues',   'admin.recurring_issues','bi-flag-fill',        'btn-outline-danger'),
     ('Post Announcement',  'admin.announcements',   'bi-megaphone',        'btn-outline-info'),
     ('View Reports',       'admin.reports',         'bi-bar-chart-line',   'btn-outline-success'),
     ('Audit Logs',         'admin.audit_logs',      'bi-journal-text',     'btn-outline-warning'),

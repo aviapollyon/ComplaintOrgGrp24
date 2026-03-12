@@ -19,6 +19,8 @@ from app.models.department       import Department
 from app.models.announcement     import Announcement
 from app.models.admin_notification import AdminNotification
 from app.models.escalation       import EscalationRequest
+from app.models.ticket_comment   import TicketComment
+from app.models.ticket_flag      import TicketFlag, FlaggedTicket
 from app.utils.decorators        import role_required
 from app.utils.helpers           import log_audit
 from app.forms.admin_forms       import (
@@ -28,6 +30,7 @@ from app.forms.admin_forms       import (
     AddDepartmentForm, EditDepartmentForm,
     AnnouncementForm, EscalationReviewForm,
 )
+from app.services.notifications import notify_sla_breach
 
 
 # Create a Flask Blueprint for admin-related routes
@@ -118,6 +121,83 @@ def dashboard():
         recent_tickets=recent_tickets,
         dept_stats=dept_stats,
         unread_count=unread_count,
+    )
+
+
+@admin_bp.route('/recurring-issues')
+@login_required
+@role_required('Admin')
+def recurring_issues():
+    status = request.args.get('status', 'all', type=str)
+    if status not in ('all', 'active', 'dismissed'):
+        status = 'all'
+
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 15, type=int)
+    if per_page not in (10, 15, 25, 50, 100):
+        per_page = 15
+
+    query = TicketFlag.query
+    if status != 'all':
+        query = query.filter(TicketFlag.Status == status)
+
+    query = query.order_by(
+        TicketFlag.Status.asc(),
+        TicketFlag.TicketCount.desc(),
+        TicketFlag.UpdatedAt.desc(),
+    )
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    flags = pagination.items
+
+    flag_ids = [f.FlagId for f in flags]
+    linked_counts = {}
+    if flag_ids:
+        linked_counts = {
+            row.FlagId: row.count
+            for row in (
+                db.session.query(
+                    FlaggedTicket.FlagId,
+                    db.func.count(FlaggedTicket.TicketId).label('count'),
+                )
+                .filter(FlaggedTicket.FlagId.in_(flag_ids))
+                .group_by(FlaggedTicket.FlagId)
+                .all()
+            )
+        }
+
+    return render_template(
+        'admin/recurring_issues.html',
+        flags=flags,
+        pagination=pagination,
+        status=status,
+        linked_counts=linked_counts,
+    )
+
+
+@admin_bp.route('/recurring-issues/<int:flag_id>/tickets')
+@login_required
+@role_required('Admin')
+def recurring_issue_tickets(flag_id):
+    flag = TicketFlag.query.get_or_404(flag_id)
+
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 15, type=int)
+    if per_page not in (10, 15, 25, 50, 100):
+        per_page = 15
+
+    query = (
+        Ticket.query
+        .join(FlaggedTicket, FlaggedTicket.TicketId == Ticket.TicketId)
+        .filter(FlaggedTicket.FlagId == flag.FlagId)
+        .order_by(Ticket.CreatedAt.desc())
+    )
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+    return render_template(
+        'admin/flagged_tickets.html',
+        flag=flag,
+        tickets=pagination.items,
+        pagination=pagination,
     )
 
 
@@ -372,6 +452,14 @@ def tickets():
         per_page = current_app.config.get('TICKETS_PER_PAGE', 15)
     pagination   = query.paginate(page=page, per_page=per_page, error_out=False)
     tickets_list = pagination.items
+
+    for t in tickets_list:
+        if t.is_response_sla_overdue:
+            notify_sla_breach(t, 'first_response')
+        if t.is_resolution_sla_overdue:
+            notify_sla_breach(t, 'resolution')
+    db.session.commit()
+
     return render_template('admin/tickets.html', tickets=tickets_list,
                            pagination=pagination,
                            filter_form=filter_form)
@@ -381,6 +469,12 @@ def tickets():
 @role_required('Admin')
 def ticket_detail(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
+
+    if ticket.is_response_sla_overdue:
+        notify_sla_breach(ticket, 'first_response')
+    if ticket.is_resolution_sla_overdue:
+        notify_sla_breach(ticket, 'resolution')
+    db.session.commit()
     
     from app.models.reopen_request       import ReopenRequest
     from app.models.reassignment_request import ReassignmentRequest
@@ -406,6 +500,10 @@ def ticket_detail(ticket_id):
                    .filter_by(ParentUpdateId=None)
                    .order_by(TicketUpdate.CreatedAt.asc())
                    .all())
+    student_comments = (TicketComment.query
+                        .filter_by(TicketId=ticket.TicketId)
+                        .order_by(TicketComment.CreatedAt.desc())
+                        .all())
     attachments = ticket.attachments.filter_by(UpdateId=None).all()
 
     reassign_form = ReassignTicketForm()
@@ -429,6 +527,7 @@ def ticket_detail(ticket_id):
         'admin/ticket_detail.html',
         ticket=ticket,
         updates=updates,
+        student_comments=student_comments,
         attachments=attachments,
         reassign_form=reassign_form,
         force_form=force_form,
@@ -1017,11 +1116,14 @@ def review_reassignment(ticket_id):
 @login_required
 @role_required('Admin')
 def dismiss_flag(flag_id):
-    from app.models.ticket_flag import TicketFlag
     flag = TicketFlag.query.get_or_404(flag_id)
     flag.Status = 'dismissed'
     db.session.commit()
     flash(f'Flag for "{flag.Category} / {flag.Keyword}" dismissed.', 'info')
+
+    next_url = request.form.get('next', '').strip()
+    if next_url.startswith('/'):
+        return redirect(next_url)
     return redirect(url_for('admin.dashboard'))
 
 

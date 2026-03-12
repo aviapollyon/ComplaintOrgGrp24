@@ -69,6 +69,16 @@
                 <i class="bi bi-plus-circle me-1"></i>New Complaint
               </a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('student.community') }}">
+                <i class="bi bi-people me-1"></i>Community
+              </a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('student.social_settings') }}">
+                <i class="bi bi-sliders me-1"></i>Social Settings
+              </a>
+            </li>
 
           {% elif current_user.Role.value == 'Staff' %}
             <li class="nav-item">
@@ -76,9 +86,15 @@
                 <i class="bi bi-person-workspace me-1"></i>Dashboard
               </a>
             </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('staff.recurring_issues') }}">
+                <i class="bi bi-flag-fill me-1"></i>Recurring Issues
+              </a>
+            </li>
 
           {% elif current_user.Role.value == 'Admin' %}
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="bi bi-grid me-1"></i>Overview</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.recurring_issues') }}"><i class="bi bi-flag-fill me-1"></i>Recurring</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.users') }}"><i class="bi bi-people me-1"></i>Users</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.tickets') }}"><i class="bi bi-ticket-detailed me-1"></i>Tickets</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.departments') }}"><i class="bi bi-building me-1"></i>Depts</a></li>

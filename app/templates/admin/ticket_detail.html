@@ -49,6 +49,11 @@
             {% endif %}
           </div>
           <div class="col-sm-4">
+            <div class="small text-muted">Community</div>
+            <span class="small"><i class="bi bi-hand-thumbs-up me-1"></i>{{ ticket.vote_count }}</span>
+            <span class="small ms-2"><i class="bi bi-chat-dots me-1"></i>{{ ticket.comment_count }}</span>
+          </div>
+          <div class="col-sm-4">
             <div class="small text-muted">Priority</div>
             {% if ticket.Priority.value == 'High' %}     <span class="badge bg-danger">High</span>
             {% elif ticket.Priority.value == 'Medium' %} <span class="badge bg-warning text-dark">Medium</span>
@@ -58,6 +63,26 @@
           <div class="col-sm-4">
             <div class="small text-muted">Submitted</div>
             <span class="small">{{ ticket.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">First Response SLA (24h)</div>
+            {% if ticket.is_response_sla_overdue %}
+              <span class="badge bg-warning text-dark">Exceeded</span>
+            {% elif ticket.has_staff_response %}
+              <span class="badge bg-success">Met</span>
+            {% else %}
+              <span class="small">Due {{ ticket.first_response_due_at.strftime('%d %b %H:%M') }}</span>
+            {% endif %}
+          </div>
+          <div class="col-sm-4">
+            <div class="small text-muted">Resolution SLA (48h)</div>
+            {% if ticket.is_resolution_sla_overdue %}
+              <span class="badge bg-danger">Exceeded</span>
+            {% elif ticket.Status.value == 'Resolved' %}
+              <span class="badge bg-success">Met</span>
+            {% else %}
+              <span class="small">Due {{ ticket.resolution_due_at.strftime('%d %b %H:%M') }}</span>
+            {% endif %}
           </div>
           {% if ticket.ResolvedAt %}
           <div class="col-sm-4">
@@ -100,10 +125,27 @@
     </div>
     {% endif %}
 
-    <!-- Timeline -->
+    <!-- Timeline + Student Comments -->
     <div class="card shadow-sm border-0">
-      <div class="card-header"><i class="bi bi-clock-history me-1"></i>Activity Timeline</div>
+      <div class="card-header p-0">
+        <ul class="nav nav-tabs card-header-tabs px-3 pt-2 border-0" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="admin-activity-tab" data-bs-toggle="tab"
+                    data-bs-target="#admin-activity-pane" type="button" role="tab">
+              <i class="bi bi-clock-history me-1"></i>Activity Timeline
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="admin-comments-tab" data-bs-toggle="tab"
+                    data-bs-target="#admin-comments-pane" type="button" role="tab">
+              <i class="bi bi-chat-dots me-1"></i>Student Comments ({{ ticket.comment_count }})
+            </button>
+          </li>
+        </ul>
+      </div>
       <div class="card-body p-3">
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="admin-activity-pane" role="tabpanel" aria-labelledby="admin-activity-tab">
         {% for update in updates %}
           {% set is_staff  = update.author.Role.value == 'Staff' %}
           {% set is_admin  = update.author.Role.value == 'Admin' %}
@@ -191,6 +233,25 @@
         {% else %}
           <p class="text-muted small mb-0">No activity yet.</p>
         {% endfor %}
+          </div>
+
+          <div class="tab-pane fade" id="admin-comments-pane" role="tabpanel" aria-labelledby="admin-comments-tab">
+            {% if student_comments %}
+              {% for c in student_comments %}
+              <div class="border rounded p-2 mb-2">
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="fw-semibold small">{{ c.user.FullName if c.user else 'Student' }}</span>
+                  <span class="text-muted" style="font-size:0.72rem;">{{ c.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
+                </div>
+                <p class="small mb-1">{{ c.Content }}</p>
+                <span class="small text-muted"><i class="bi bi-hand-thumbs-up me-1"></i>{{ c.upvote_count }}</span>
+              </div>
+              {% endfor %}
+            {% else %}
+              <p class="text-muted small mb-0">No student comments yet.</p>
+            {% endif %}
+          </div>
+        </div>
       </div>
     </div>
   </div>

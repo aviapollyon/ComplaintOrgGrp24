@@ -3,11 +3,54 @@
 {% block title %}My Dashboard — DUT Grievance Portal{% endblock %}
 
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-4">
-  <h3 class="mb-0"><i class="bi bi-house-door me-2 text-primary"></i>My Dashboard</h3>
-  <a href="{{ url_for('student.submit_ticket') }}" class="btn btn-primary">
-    <i class="bi bi-plus-circle me-1"></i>New Complaint
-  </a>
+<div class="mb-4">
+  <h3 class="mb-1"><i class="bi bi-house-door me-2 text-primary"></i>Student Home</h3>
+  <p class="small text-muted mb-0">Quick actions and complaint tracking.</p>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12 col-md-4">
+    <a href="{{ url_for('student.submit_ticket') }}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="badge bg-primary">Action</span>
+            <i class="bi bi-plus-circle fs-4 text-primary"></i>
+          </div>
+          <h6 class="mb-1 text-body">Submit Complaint</h6>
+          <p class="small text-muted mb-0">Create a new complaint and receive a tracking reference.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-12 col-md-4">
+    <a href="#my-complaints" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="badge bg-secondary">My Tickets</span>
+            <i class="bi bi-ticket-detailed fs-4 text-secondary"></i>
+          </div>
+          <h6 class="mb-1 text-body">My Complaints</h6>
+          <p class="small text-muted mb-0">View and manage your complaint history.</p>
+        </div>
+      </div>
+    </a>
+  </div>
+  <div class="col-12 col-md-4">
+    <a href="{{ url_for('student.community') }}" class="text-decoration-none">
+      <div class="card border-0 shadow-sm h-100">
+        <div class="card-body">
+          <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="badge bg-info text-dark">Community</span>
+            <i class="bi bi-people fs-4 text-info"></i>
+          </div>
+          <h6 class="mb-1 text-body">Other Student Complaints</h6>
+          <p class="small text-muted mb-0">Browse complaints submitted by other students.</p>
+        </div>
+      </div>
+    </a>
+  </div>
 </div>
 
 <!-- Track by Reference -->
@@ -17,7 +60,7 @@
           action="{{ url_for('student.track_ticket') }}">
       <div class="col-auto">
         <label class="form-label mb-0 small fw-semibold text-info">
-          <i class="bi bi-upc-scan me-1"></i>Track by Ref
+          <i class="bi bi-upc-scan me-1"></i>Track Complaint by Reference
         </label>
       </div>
       <div class="col">
@@ -78,6 +121,8 @@
     </div>
   </div>
 </div>
+
+<div id="my-complaints"></div>
 
 <!-- Filters -->
 <div class="card mb-4 border-0 shadow-sm">
@@ -176,6 +221,7 @@
           <th>Category</th>
           <th>Sub-Category</th>
           <th>Priority</th>
+          <th>Community</th>
           <th>Status</th>
           <th>Submitted</th>
           <th>Actions</th>
@@ -225,6 +271,10 @@
             {% else %}
               <span class="badge bg-success">Low</span>
             {% endif %}
+          </td>
+          <td class="small">
+            <span class="me-2"><i class="bi bi-hand-thumbs-up"></i> {{ ticket.vote_count }}</span>
+            <span><i class="bi bi-chat-dots"></i> {{ ticket.comment_count }}</span>
           </td>
           <td>
             {% set s = ticket.Status.value %}

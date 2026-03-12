@@ -3,11 +3,11 @@ from flask_login import login_user, logout_user, login_required, current_user
 from datetime import datetime
 from app import db
 from app.models.user import User, RoleEnum
-from app.models.department import Department
 from app.utils.helpers import log_audit
 
 # Blueprint for authentication-related routes
 auth_bp = Blueprint('auth', __name__)
+STUDENT_EMAIL_DOMAIN = '@dut4life.ac.za'
 
 
 # Home/index route: redirect authenticated users to their dashboard, otherwise to login
@@ -82,38 +82,32 @@ def login():
 # Registration route: handles GET (show form) and POST (process registration)
 @auth_bp.route('/register', methods=['GET', 'POST'])
 def register():
-    # Produce the active department directory layout list for population into registration UI dropdowns
-    departments = Department.query.order_by(Department.Name).all()
-
     # Intercept new account building action requests 
     if request.method == 'POST':
         # Map raw data fields captured directly from the HTTP POST form structure
         full_name   = request.form.get('full_name', '').strip()
         email       = request.form.get('email', '').strip().lower()
         password    = request.form.get('password', '')
-        role_str    = request.form.get('role', 'Student')
-        dept_id_raw = request.form.get('department_id', '')
+
+        if not full_name or not email or not password:
+            flash('Please complete all required fields.', 'danger')
+            return render_template('auth/register.html')
+
+        if not email.endswith(STUDENT_EMAIL_DOMAIN):
+            flash('Registration requires a valid DUT4Life email address.', 'danger')
+            return render_template('auth/register.html')
 
         # Collision query mapping check ensuring no duplicate emails enter the system
         if User.query.filter_by(Email=email).first():
             flash('Email already registered.', 'danger')
-            return render_template('auth/register.html', departments=departments)
-
-        # Enforce valid mapping values into specific system Enums. Defaults to Student if hacked/broken input happens.
-        try:
-            role = RoleEnum[role_str]
-        except KeyError:
-            role = RoleEnum.Student
-
-        # Transform string ID component of Department into exact numeric integer index, otherwise None/null map.
-        dept_id = int(dept_id_raw) if dept_id_raw.isdigit() else None
+            return render_template('auth/register.html')
 
         # Instantiate fresh user Object tracking directly aligning column mapping assignments
         user = User(
             FullName     = full_name,
             Email        = email,
-            Role         = role,
-            DepartmentId = dept_id,
+            Role         = RoleEnum.Student,
+            DepartmentId = None,
         )
         
         # Invoke User Model functionality that permanently encrypts passwords behind werkzeug_security hashes   
@@ -127,7 +121,7 @@ def register():
         return redirect(url_for('auth.login'))
 
     # Deliver view-state render configuration for users navigating into the web portal registration area
-    return render_template('auth/register.html', departments=departments)
+    return render_template('auth/register.html')
 
 
 # Logout route: logs out the current user

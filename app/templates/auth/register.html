@@ -20,6 +20,7 @@
           <div class="mb-3">
             <label class="form-label">Email address</label>
             <input type="email" name="email" class="form-control" required/>
+            <div class="form-text">Use your @dut4life.ac.za student email.</div>
           </div>
 
           <div class="mb-3">
@@ -27,31 +28,8 @@
             <input type="password" name="password" class="form-control" required/>
           </div>
 
-          <div class="mb-3">
-            <label class="form-label">Role</label>
-            <select name="role" class="form-select" id="roleSelect">
-              <option value="Student">Student</option>
-              <option value="Staff">Staff</option>
-            </select>
-            <div class="form-text">Admins are created directly by the system administrator.</div>
-          </div>
-
-          <!-- Department — only shown / required for Staff -->
-          <div class="mb-4 d-none" id="departmentGroup">
-            <label class="form-label">
-              Department
-              <span id="deptRequiredBadge" class="badge bg-danger ms-1 d-none">Required for Staff</span>
-            </label>
-            <select name="department_id" class="form-select" id="departmentSelect">
-              <option value="">— Select Department —</option>
-              {% for dept in departments %}
-                <option value="{{ dept.DepartmentId }}">{{ dept.Name }}</option>
-              {% endfor %}
-            </select>
-            <div class="form-text" id="deptHint">
-              Students: select your faculty department.
-              Staff: select the department you work in.
-            </div>
+          <div class="mb-4">
+            <div class="form-text">All accounts created through this page are Student accounts.</div>
           </div>
 
           <button type="submit" class="btn btn-primary w-100">Register</button>
@@ -64,21 +42,4 @@
     </div>
   </div>
 </div>
-{% endblock %}
-
-{% block extra_scripts %}
-<script>
-  const roleSelect   = document.getElementById('roleSelect');
-  const deptGroup    = document.getElementById('departmentGroup');
-  const badge        = document.getElementById('deptRequiredBadge');
-  const deptSelect   = document.getElementById('departmentSelect');
-
-  roleSelect.addEventListener('change', () => {
-    const isStaff = roleSelect.value === 'Staff';
-    deptGroup.classList.toggle('d-none', !isStaff);
-    badge.classList.toggle('d-none', !isStaff);
-    deptSelect.required = isStaff;
-    if (!isStaff) deptSelect.value = '';
-  });
-</script>
 {% endblock %}

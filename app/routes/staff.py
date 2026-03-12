@@ -13,17 +13,19 @@ from app.models.escalation        import EscalationRequest
 from app.models.reassignment_request import ReassignmentRequest
 from app.models.admin_notification import AdminNotification
 from app.models.user              import User, RoleEnum
+from app.models.ticket_comment    import TicketComment
+from app.models.ticket_flag       import TicketFlag, FlaggedTicket
 from app.utils.decorators         import role_required
 from app.services.notifications   import (
     notify_status_update, notify_staff_reply,
     notify_ticket_resolved, notify_ticket_rejected,
-    notify_progress_update,
+    notify_progress_update, notify_sla_breach,
 )
 from app.forms.staff_forms import (
     UpdateTicketForm, ResolveTicketForm,
     ReplyForm, StaffThreadReplyForm,
     EscalationRequestForm, StaffReassignmentRequestForm,
-    StaffTicketFilterForm,
+    StaffTicketFilterForm, UpdatePriorityForm,
 )
 
 staff_bp = Blueprint('staff', __name__)
@@ -32,6 +34,159 @@ _STATUS_MAP = {
     'In Progress': (StatusEnum.InProgress, UpdateStatusEnum.InProgress),
     'Rejected'   : (StatusEnum.Rejected,   UpdateStatusEnum.Rejected),
 }
+
+
+@staff_bp.route('/recurring-issues')
+@login_required
+@role_required('Staff')
+def recurring_issues():
+    status = request.args.get('status', 'all', type=str)
+    if status not in ('all', 'active', 'dismissed'):
+        status = 'all'
+
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 15, type=int)
+    if per_page not in (10, 15, 25, 50, 100):
+        per_page = 15
+
+    my_ticket_ids = [
+        row[0] for row in db.session.query(Ticket.TicketId)
+        .filter(Ticket.StaffId == current_user.UserId)
+        .all()
+    ]
+
+    if not my_ticket_ids:
+        return render_template(
+            'staff/recurring_issues.html',
+            flags=[],
+            pagination=None,
+            status=status,
+            linked_counts={},
+        )
+
+    query = (
+        TicketFlag.query
+        .join(FlaggedTicket, FlaggedTicket.FlagId == TicketFlag.FlagId)
+        .filter(FlaggedTicket.TicketId.in_(my_ticket_ids))
+        .distinct()
+    )
+    if status != 'all':
+        query = query.filter(TicketFlag.Status == status)
+
+    query = query.order_by(
+        TicketFlag.Status.asc(),
+        TicketFlag.TicketCount.desc(),
+        TicketFlag.UpdatedAt.desc(),
+    )
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    flags = pagination.items
+
+    flag_ids = [f.FlagId for f in flags]
+    linked_counts = {}
+    if flag_ids:
+        linked_counts = {
+            row.FlagId: row.count
+            for row in (
+                db.session.query(
+                    FlaggedTicket.FlagId,
+                    db.func.count(FlaggedTicket.TicketId).label('count'),
+                )
+                .filter(
+                    FlaggedTicket.FlagId.in_(flag_ids),
+                    FlaggedTicket.TicketId.in_(my_ticket_ids),
+                )
+                .group_by(FlaggedTicket.FlagId)
+                .all()
+            )
+        }
+
+    return render_template(
+        'staff/recurring_issues.html',
+        flags=flags,
+        pagination=pagination,
+        status=status,
+        linked_counts=linked_counts,
+    )
+
+
+@staff_bp.route('/recurring-issues/<int:flag_id>/tickets')
+@login_required
+@role_required('Staff')
+def recurring_issue_tickets(flag_id):
+    flag = TicketFlag.query.get_or_404(flag_id)
+
+    allowed = (
+        db.session.query(FlaggedTicket.Id)
+        .join(Ticket, Ticket.TicketId == FlaggedTicket.TicketId)
+        .filter(
+            FlaggedTicket.FlagId == flag_id,
+            Ticket.StaffId == current_user.UserId,
+        )
+        .first()
+    )
+    if not allowed:
+        abort(403)
+
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 15, type=int)
+    if per_page not in (10, 15, 25, 50, 100):
+        per_page = 15
+
+    query = (
+        Ticket.query
+        .join(FlaggedTicket, FlaggedTicket.TicketId == Ticket.TicketId)
+        .filter(
+            FlaggedTicket.FlagId == flag.FlagId,
+            Ticket.StaffId == current_user.UserId,
+        )
+        .order_by(Ticket.CreatedAt.desc())
+    )
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+
+    return render_template(
+        'staff/flagged_tickets.html',
+        flag=flag,
+        tickets=pagination.items,
+        pagination=pagination,
+    )
+
+
+@staff_bp.route('/flags/<int:flag_id>/dismiss', methods=['POST'])
+@login_required
+@role_required('Staff')
+def dismiss_flag(flag_id):
+    my_ticket_ids = [
+        row[0] for row in db.session.query(Ticket.TicketId)
+        .filter(Ticket.StaffId == current_user.UserId)
+        .all()
+    ]
+
+    if not my_ticket_ids:
+        abort(403)
+
+    allowed = (
+        db.session.query(FlaggedTicket.Id)
+        .filter(
+            FlaggedTicket.FlagId == flag_id,
+            FlaggedTicket.TicketId.in_(my_ticket_ids),
+        )
+        .first()
+    )
+    if not allowed:
+        abort(403)
+
+    flag = TicketFlag.query.get_or_404(flag_id)
+    if flag.Status != 'dismissed':
+        flag.Status = 'dismissed'
+        db.session.commit()
+        flash(f'Flag for "{flag.Category} / {flag.Keyword}" dismissed.', 'info')
+    else:
+        flash('Flag is already dismissed.', 'info')
+
+    next_url = request.form.get('next', '').strip()
+    if next_url.startswith('/'):
+        return redirect(next_url)
+    return redirect(url_for('staff.recurring_issues'))
 
 
 @staff_bp.route('/dashboard')
@@ -77,6 +232,14 @@ def dashboard():
     tickets    = pagination.items
 
     all_assigned = Ticket.query.filter_by(StaffId=current_user.UserId).all()
+
+    for t in all_assigned:
+        if t.is_response_sla_overdue:
+            notify_sla_breach(t, 'first_response')
+        if t.is_resolution_sla_overdue:
+            notify_sla_breach(t, 'resolution')
+    db.session.commit()
+
     resolved_t   = [t for t in all_assigned
                     if t.Status == StatusEnum.Resolved and t.ResolvedAt]
     avg_hrs      = None
@@ -87,7 +250,6 @@ def dashboard():
         )
 
     # ── Flags ONLY for tickets assigned to THIS staff member ──────────────
-    from app.models.ticket_flag import TicketFlag, FlaggedTicket
     my_ticket_ids = [t.TicketId for t in all_assigned]
 
     if my_ticket_ids:
@@ -123,9 +285,7 @@ def dashboard():
         'pending_info': sum(1 for t in all_assigned if t.Status == StatusEnum.PendingInfo),
         'resolved'    : len(resolved_t),
         'overdue'     : sum(
-            1 for t in all_assigned
-            if t.Status not in (StatusEnum.Resolved, StatusEnum.Rejected)
-            and (datetime.utcnow() - t.CreatedAt).days > 3
+            1 for t in all_assigned if t.is_response_sla_overdue or t.is_resolution_sla_overdue
         ),
         'avg_hours': avg_hrs,
     }
@@ -147,15 +307,29 @@ def dashboard():
 def view_ticket(ticket_id):
     from app.models.reassignment_request import ReassignmentRequest
     ticket  = _get_staff_ticket(ticket_id)
+
+    if ticket.is_response_sla_overdue:
+        notify_sla_breach(ticket, 'first_response')
+    if ticket.is_resolution_sla_overdue:
+        notify_sla_breach(ticket, 'resolution')
+    db.session.commit()
+
     updates = (ticket.updates
                .filter_by(ParentUpdateId=None)
                .order_by(TicketUpdate.CreatedAt.asc())
                .all())
+    student_comments = (TicketComment.query
+                        .filter_by(TicketId=ticket.TicketId)
+                        .order_by(TicketComment.CreatedAt.desc())
+                        .all())
     attachments       = ticket.attachments.filter_by(UpdateId=None).all()
     update_form       = UpdateTicketForm()
+    priority_form     = UpdatePriorityForm()
     resolve_form      = ResolveTicketForm()
     reply_form        = ReplyForm()
     thread_reply_form = StaffThreadReplyForm()
+
+    priority_form.priority.data = ticket.Priority.value
 
     escalation_form = EscalationRequestForm()
     other_depts     = Department.query.filter(
@@ -184,8 +358,10 @@ def view_ticket(ticket_id):
         'staff/view_ticket.html',
         ticket=ticket,
         updates=updates,
+        student_comments=student_comments,
         attachments=attachments,
         update_form=update_form,
+        priority_form=priority_form,
         resolve_form=resolve_form,
         reply_form=reply_form,
         thread_reply_form=thread_reply_form,
@@ -226,6 +402,32 @@ def update_ticket(ticket_id):
         flash(f'Status updated to "{form.status.data}".', 'success')
     else:
         flash('Please fill in all required fields.', 'danger')
+    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+
+
+@staff_bp.route('/ticket/<int:ticket_id>/update-priority', methods=['POST'])
+@login_required
+@role_required('Staff')
+def update_ticket_priority(ticket_id):
+    ticket = _get_staff_ticket(ticket_id)
+    form   = UpdatePriorityForm()
+    if form.validate_on_submit():
+        old_priority = ticket.Priority.value
+        ticket.Priority = PriorityEnum(form.priority.data)
+        ticket.UpdatedAt = datetime.utcnow()
+        db.session.add(TicketUpdate(
+            TicketId=ticket.TicketId,
+            UserId=current_user.UserId,
+            Comment=(
+                f'[PRIORITY UPDATED] {old_priority} -> {form.priority.data}. '
+                f'Reason: {form.reason.data.strip()}'
+            ),
+            IsReplyThread=False,
+        ))
+        db.session.commit()
+        flash(f'Priority updated to "{form.priority.data}".', 'success')
+    else:
+        flash('Please select a priority and provide a reason (min 5 characters).', 'danger')
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 

@@ -1,6 +1,6 @@
 import enum
 from app import db
-from datetime import datetime
+from datetime import datetime, timedelta
 import uuid
 
 
@@ -83,6 +83,20 @@ class Ticket(db.Model):
         lazy='dynamic',
         foreign_keys='Attachment.TicketId'
     )
+    ticket_votes = db.relationship(
+        'TicketVote',
+        back_populates='ticket',
+        lazy='dynamic',
+        foreign_keys='TicketVote.TicketId',
+        cascade='all, delete-orphan',
+    )
+    ticket_comments = db.relationship(
+        'TicketComment',
+        back_populates='ticket',
+        lazy='dynamic',
+        foreign_keys='TicketComment.TicketId',
+        cascade='all, delete-orphan',
+    )
 
     @property
     def is_editable(self):
@@ -96,6 +110,44 @@ class Ticket(db.Model):
     def needs_feedback(self):
         return (self.Status == StatusEnum.Resolved
                 and self.FeedbackRating is None)
+
+    @property
+    def vote_count(self):
+        return self.ticket_votes.count()
+
+    @property
+    def comment_count(self):
+        return self.ticket_comments.count()
+
+    @property
+    def first_response_due_at(self):
+        return (self.CreatedAt or datetime.utcnow()) + timedelta(hours=24)
+
+    @property
+    def resolution_due_at(self):
+        return (self.CreatedAt or datetime.utcnow()) + timedelta(hours=48)
+
+    @property
+    def has_staff_response(self):
+        from app.models.user import RoleEnum
+        for update in self.updates.all():
+            if update.author and update.author.Role == RoleEnum.Staff:
+                return True
+        return False
+
+    @property
+    def is_response_sla_overdue(self):
+        if self.Status in (StatusEnum.Resolved, StatusEnum.Rejected):
+            return False
+        if self.has_staff_response:
+            return False
+        return datetime.utcnow() > self.first_response_due_at
+
+    @property
+    def is_resolution_sla_overdue(self):
+        if self.Status in (StatusEnum.Resolved, StatusEnum.Rejected):
+            return False
+        return datetime.utcnow() > self.resolution_due_at
 
     def __repr__(self):
         return f'<Ticket #{self.TicketId} [{self.Status.value}]>'

@@ -11,3 +11,7 @@ from app.models.reassignment_request import ReassignmentRequest   # noqa: F401
 from app.models.reopen_request      import ReopenRequest          # noqa: F401
 from app.models.ticket_flag         import TicketFlag, FlaggedTicket  # noqa: F401
 from app.models.audit_log           import AuditLog                   # noqa: F401
+from app.models.ticket_vote         import TicketVote                 # noqa: F401
+from app.models.ticket_comment      import TicketComment              # noqa: F401
+from app.models.comment_vote        import CommentVote                # noqa: F401
+from app.models.user_preference     import UserPreference             # noqa: F401

@@ -278,3 +278,17 @@ html { scroll-behavior: smooth; }
 /* Selection color */
 ::selection { background: #3b82f620; }
 [data-bs-theme="dark"] ::selection { background: #60a5fa30; }
+
+/* ── Dark mode readability fixes for activity/message blocks ───────────── */
+[data-bs-theme="dark"] .bg-light {
+  background-color: #e5e7eb !important;
+  color: #111 !important;
+}
+
+[data-bs-theme="dark"] .text-muted {
+  color: #111 !important;
+}
+
+[data-bs-theme="dark"] .form-text {
+  color: #111 !important;
+}

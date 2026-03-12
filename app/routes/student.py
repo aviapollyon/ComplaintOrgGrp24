@@ -5,6 +5,7 @@ from flask import (
     flash, request, abort, send_from_directory, current_app
 )
 from flask_login import login_required, current_user
+from sqlalchemy.exc import IntegrityError
 
 from app import db
 from app.models.ticket        import Ticket, StatusEnum, PriorityEnum
@@ -13,18 +14,29 @@ from app.models.attachment    import Attachment
 from app.models.department    import Department
 from app.models.reopen_request import ReopenRequest
 from app.models.admin_notification import AdminNotification
+from app.models.user import RoleEnum
+from app.models.ticket_vote import TicketVote
+from app.models.ticket_comment import TicketComment
+from app.models.comment_vote import CommentVote
+from app.models.user_preference import UserPreference
 from app.utils.decorators     import role_required
 from app.utils.helpers        import (
-    allowed_file, get_priority_for_category,
+    allowed_file,
     get_department_name_for_category, check_and_raise_flags,
     CATEGORY_SUBCATEGORY_MAP,
 )
 from app.utils.sorting        import apply_sort
 from app.services.assignment  import auto_assign_ticket
-from app.services.notifications import notify_student_replied, notify_ticket_submitted
+from app.services.notifications import (
+    notify_student_replied,
+    notify_ticket_submitted,
+    notify_social_vote,
+    notify_social_comment,
+)
 from app.forms.student_forms  import (
     SubmitTicketForm, EditTicketForm, FeedbackForm,
-    TicketFilterForm, StudentReplyForm, ReopenRequestForm
+    TicketFilterForm, StudentReplyForm, ReopenRequestForm,
+    TicketCommentForm, SocialPreferenceForm,
 )
 
 student_bp = Blueprint('student', __name__)
@@ -87,6 +99,29 @@ def dashboard():
     )
 
 
+@student_bp.route('/community')
+@login_required
+@role_required('Student')
+def community():
+    page = request.args.get('page', 1, type=int)
+    community_query = (Ticket.query
+                       .filter(Ticket.StudentId != current_user.UserId)
+                       .order_by(Ticket.CreatedAt.desc()))
+    pagination = community_query.paginate(page=page, per_page=12, error_out=False)
+
+    my_ticket_votes = {
+        v.TicketId for v in TicketVote.query.filter_by(UserId=current_user.UserId).all()
+    }
+
+    return render_template(
+        'student/community.html',
+        tickets=pagination.items,
+        pagination=pagination,
+        my_ticket_votes=my_ticket_votes,
+        comment_form=TicketCommentForm(),
+    )
+
+
 @student_bp.route('/get-subcategories')
 @login_required
 def get_subcategories():
@@ -135,7 +170,6 @@ def submit_ticket():
     form.sub_category.choices = [('', '— Select Sub-Category —')] + [(s, s) for s in subs]
 
     if form.validate_on_submit():
-        priority_str = get_priority_for_category(form.category.data)
         dept_name    = get_department_name_for_category(form.category.data)
         dept         = Department.query.filter_by(Name=dept_name).first()
 
@@ -146,7 +180,8 @@ def submit_ticket():
             Description  = form.description.data.strip(),
             Category     = form.category.data,
             SubCategory  = form.sub_category.data,
-            Priority     = PriorityEnum[priority_str],
+            # Staff sets final priority after investigation.
+            Priority     = PriorityEnum.Medium,
             Status       = StatusEnum.Submitted,
             CreatedAt    = datetime.utcnow(),
             UpdatedAt    = datetime.utcnow(),
@@ -195,15 +230,35 @@ def submit_ticket():
 @login_required
 @role_required('Student')
 def view_ticket(ticket_id):
-    ticket             = _get_student_ticket(ticket_id)
-    updates            = (ticket.updates
-                          .filter_by(ParentUpdateId=None)
-                          .order_by(TicketUpdate.CreatedAt.asc())
-                          .all())
+    ticket = _get_student_ticket(ticket_id)
+    is_owner = ticket.StudentId == current_user.UserId
+
+    updates = []
+    if is_owner:
+        updates = (ticket.updates
+                   .filter_by(ParentUpdateId=None)
+                   .order_by(TicketUpdate.CreatedAt.asc())
+                   .all())
+
+    student_comments = (TicketComment.query
+                        .filter_by(TicketId=ticket.TicketId)
+                        .order_by(TicketComment.CreatedAt.desc())
+                        .all())
+
+    my_ticket_vote = TicketVote.query.filter_by(
+        TicketId=ticket.TicketId,
+        UserId=current_user.UserId,
+    ).first()
+
+    my_comment_votes = {
+        v.CommentId for v in CommentVote.query.filter_by(UserId=current_user.UserId).all()
+    }
+
     ticket_attachments = ticket.attachments.filter_by(UpdateId=None).all()
     reply_form         = StudentReplyForm()
     feedback_form      = FeedbackForm()
     reopen_form        = ReopenRequestForm()
+    comment_form       = TicketCommentForm()
 
     pending_reopen = ReopenRequest.query.filter_by(
         TicketId=ticket_id, StudentId=current_user.UserId, Status='Pending'
@@ -216,21 +271,131 @@ def view_ticket(ticket_id):
     return render_template(
         'student/view_ticket.html',
         ticket=ticket,
+        is_owner=is_owner,
         updates=updates,
+        student_comments=student_comments,
+        my_ticket_vote=my_ticket_vote,
+        my_comment_votes=my_comment_votes,
         ticket_attachments=ticket_attachments,
         reply_form=reply_form,
         feedback_form=feedback_form,
         reopen_form=reopen_form,
+        comment_form=comment_form,
         pending_reopen=pending_reopen,
         locked_thread_ids=locked_thread_ids,
     )
+
+
+@student_bp.route('/ticket/<int:ticket_id>/vote', methods=['POST'])
+@login_required
+@role_required('Student')
+def vote_ticket(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+
+    if ticket.StudentId == current_user.UserId:
+        flash('You cannot vote on your own ticket.', 'warning')
+        return redirect(request.referrer or url_for('student.community'))
+
+    existing = TicketVote.query.filter_by(
+        TicketId=ticket_id,
+        UserId=current_user.UserId,
+    ).first()
+
+    if existing:
+        db.session.delete(existing)
+        flash('Your vote was removed.', 'info')
+    else:
+        db.session.add(TicketVote(TicketId=ticket_id, UserId=current_user.UserId))
+        notify_social_vote(ticket, current_user)
+        flash('Your vote was recorded.', 'success')
+
+    db.session.commit()
+    return redirect(request.referrer or url_for('student.community'))
+
+
+@student_bp.route('/ticket/<int:ticket_id>/comment', methods=['POST'])
+@login_required
+@role_required('Student')
+def add_ticket_comment(ticket_id):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    form = TicketCommentForm()
+
+    if ticket.StudentId == current_user.UserId:
+        flash('Use the activity thread for your own ticket.', 'warning')
+        return redirect(request.referrer or url_for('student.view_ticket', ticket_id=ticket_id))
+
+    if form.validate_on_submit():
+        db.session.add(TicketComment(
+            TicketId=ticket_id,
+            UserId=current_user.UserId,
+            Content=form.content.data.strip(),
+        ))
+        notify_social_comment(ticket, current_user)
+
+        db.session.commit()
+        flash('Comment posted.', 'success')
+    else:
+        flash('Comment must be 2-500 characters.', 'danger')
+
+    return redirect(request.referrer or url_for('student.view_ticket', ticket_id=ticket_id))
+
+
+@student_bp.route('/comment/<int:comment_id>/upvote', methods=['POST'])
+@login_required
+@role_required('Student')
+def upvote_comment(comment_id):
+    comment = TicketComment.query.get_or_404(comment_id)
+
+    existing = CommentVote.query.filter_by(
+        CommentId=comment_id,
+        UserId=current_user.UserId,
+    ).first()
+
+    if existing:
+        db.session.delete(existing)
+        flash('Comment upvote removed.', 'info')
+    else:
+        db.session.add(CommentVote(CommentId=comment_id, UserId=current_user.UserId))
+        flash('Comment upvoted.', 'success')
+
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
+        flash('Upvote update failed, please try again.', 'danger')
+
+    return redirect(request.referrer or url_for('student.community'))
+
+
+@student_bp.route('/settings/social', methods=['GET', 'POST'])
+@login_required
+@role_required('Student')
+def social_settings():
+    pref = UserPreference.query.filter_by(UserId=current_user.UserId).first()
+    if not pref:
+        pref = UserPreference(UserId=current_user.UserId, SuppressSocialNotifications=False)
+        db.session.add(pref)
+        db.session.flush()
+
+    form = SocialPreferenceForm()
+
+    if request.method == 'GET':
+        form.suppress_social.data = pref.SuppressSocialNotifications
+
+    if form.validate_on_submit():
+        pref.SuppressSocialNotifications = bool(form.suppress_social.data)
+        db.session.commit()
+        flash('Social notification preference updated.', 'success')
+        return redirect(url_for('student.social_settings'))
+
+    return render_template('student/social_settings.html', form=form)
 
 
 @student_bp.route('/ticket/<int:ticket_id>/edit', methods=['GET', 'POST'])
 @login_required
 @role_required('Student')
 def edit_ticket(ticket_id):
-    ticket = _get_student_ticket(ticket_id)
+    ticket = _get_owned_student_ticket(ticket_id)
     if not ticket.is_editable:
         flash('This ticket can no longer be edited.', 'warning')
         return redirect(url_for('student.view_ticket', ticket_id=ticket_id))
@@ -278,7 +443,7 @@ def edit_ticket(ticket_id):
 @login_required
 @role_required('Student')
 def reply_to_update(ticket_id, update_id):
-    ticket        = _get_student_ticket(ticket_id)
+    ticket        = _get_owned_student_ticket(ticket_id)
     parent_update = TicketUpdate.query.get_or_404(update_id)
 
     if parent_update.TicketId != ticket_id:
@@ -330,7 +495,7 @@ def reply_to_update(ticket_id, update_id):
 @login_required
 @role_required('Student')
 def withdraw_ticket(ticket_id):
-    ticket = _get_student_ticket(ticket_id)
+    ticket = _get_owned_student_ticket(ticket_id)
     if not ticket.is_withdrawable:
         flash('This ticket cannot be withdrawn.', 'warning')
         return redirect(url_for('student.view_ticket', ticket_id=ticket_id))
@@ -350,7 +515,7 @@ def withdraw_ticket(ticket_id):
 @login_required
 @role_required('Student')
 def submit_feedback(ticket_id):
-    ticket = _get_student_ticket(ticket_id)
+    ticket = _get_owned_student_ticket(ticket_id)
     form   = FeedbackForm()
     if form.validate_on_submit():
         ticket.FeedbackRating  = form.rating.data
@@ -366,7 +531,7 @@ def submit_feedback(ticket_id):
 @login_required
 @role_required('Student')
 def request_reopen(ticket_id):
-    ticket = _get_student_ticket(ticket_id)
+    ticket = _get_owned_student_ticket(ticket_id)
     if ticket.Status not in (StatusEnum.Resolved, StatusEnum.Rejected):
         flash('Only resolved or rejected tickets can be reopened.', 'warning')
         return redirect(url_for('student.view_ticket', ticket_id=ticket_id))
@@ -420,9 +585,18 @@ def serve_upload(filepath):
 
 def _get_student_ticket(ticket_id: int) -> Ticket:
     ticket = Ticket.query.get_or_404(ticket_id)
+    if current_user.Role != RoleEnum.Student:
+        abort(403)
+    return ticket
+
+
+def _get_owned_student_ticket(ticket_id: int) -> Ticket:
+    ticket = _get_student_ticket(ticket_id)
     if ticket.StudentId != current_user.UserId:
         abort(403)
     return ticket
+
+
 
 
 def _get_locked_thread_ids(ticket: Ticket) -> set[int]:
