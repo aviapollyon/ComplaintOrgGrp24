@@ -5,12 +5,14 @@ This file contains all the Flask route handlers and helper functions for admin o
 """
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
+from collections import defaultdict
 from flask import (
     Blueprint, render_template, redirect, url_for,
     flash, request, abort, Response, current_app
 )
 from flask_login import login_required, current_user
+from sqlalchemy.orm import joinedload
 from app import db
 from app.models.user             import User, RoleEnum
 from app.models.ticket           import Ticket, StatusEnum, PriorityEnum
@@ -22,6 +24,7 @@ from app.models.escalation       import EscalationRequest
 from app.models.reassignment_request import ReassignmentRequest
 from app.models.reopen_request   import ReopenRequest
 from app.models.ticket_comment   import TicketComment
+from app.models.ticket_vote      import TicketVote
 from app.models.ticket_flag      import TicketFlag, FlaggedTicket
 from app.utils.decorators        import role_required
 from app.utils.helpers           import log_audit
@@ -473,19 +476,8 @@ def user_detail(user_id):
 
 # ── TICKETS ───────────────────────────────────────────────────────────────────
 # Tickets route: List all tickets with filtering options.
-@admin_bp.route('/tickets')
-@login_required
-@role_required('Admin')
-def tickets():
+def _build_admin_ticket_query(filter_form):
     from app.utils.sorting import apply_sort
-
-    filter_form = AdminTicketFilterForm(request.args)
-    filter_form.department.choices = _dept_choices()
-    filter_form.staff.choices      = [(0, 'All Staff')] + [
-        (s.UserId, s.FullName)
-        for s in User.query.filter_by(Role=RoleEnum.Staff, IsActive=True)
-                            .order_by(User.FullName).all()
-    ]
 
     query = Ticket.query
     if filter_form.search.data:
@@ -515,7 +507,22 @@ def tickets():
     if filter_form.staff.data and filter_form.staff.data != 0:
         query = query.filter(Ticket.StaffId == filter_form.staff.data)
 
-    query        = apply_sort(query, filter_form.sort.data or 'newest')
+    return apply_sort(query, filter_form.sort.data or 'newest')
+
+
+@admin_bp.route('/tickets')
+@login_required
+@role_required('Admin')
+def tickets():
+    filter_form = AdminTicketFilterForm(request.args)
+    filter_form.department.choices = _dept_choices()
+    filter_form.staff.choices      = [(0, 'All Staff')] + [
+        (s.UserId, s.FullName)
+        for s in User.query.filter_by(Role=RoleEnum.Staff, IsActive=True)
+                            .order_by(User.FullName).all()
+    ]
+
+    query        = _build_admin_ticket_query(filter_form)
     page         = request.args.get('page', 1, type=int)
     try:
         per_page = int(filter_form.per_page.data or current_app.config.get('TICKETS_PER_PAGE', 15))
@@ -809,17 +816,44 @@ def review_escalation(ticket_id):
 @login_required
 @role_required('Admin')
 def export_tickets():
-    # Grab all tickets, newest first
-    tickets_list = Ticket.query.order_by(Ticket.CreatedAt.desc()).all()
+    filter_form = AdminTicketFilterForm(request.args)
+    filter_form.department.choices = _dept_choices()
+    filter_form.staff.choices      = [(0, 'All Staff')] + [
+        (s.UserId, s.FullName)
+        for s in User.query.filter_by(Role=RoleEnum.Staff, IsActive=True)
+                            .order_by(User.FullName).all()
+    ]
+
+    tickets_query = (_build_admin_ticket_query(filter_form)
+                     .options(
+                         joinedload(Ticket.department),
+                         joinedload(Ticket.student),
+                         joinedload(Ticket.staff),
+                     ))
+
+    max_rows = int(current_app.config.get('CSV_EXPORT_MAX_ROWS', 50000))
+    row_count = tickets_query.count()
+    if row_count > max_rows:
+        flash(
+            f'Export limit exceeded ({row_count} rows). Narrow filters to {max_rows} rows or fewer.',
+            'warning',
+        )
+        return redirect(url_for('admin.tickets', **request.args.to_dict(flat=True)))
+
+    tickets_list = tickets_query.all()
+    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
 
     # Generator method to build CSV rows lazily
     def generate():
-        out = io.StringIO()
+        out = io.StringIO(newline='')
         w   = csv.writer(out)
         
         # Write the CSV Header Row
         w.writerow(['ID','Title','Category','Priority','Status','Department',
                     'Student','Assigned Staff','Submitted','Resolved At','Feedback Rating'])
+        # Prefix BOM for Excel UTF-8 compatibility on Windows.
+        yield '\ufeff' + out.getvalue()
+        out.seek(0); out.truncate(0)
         
         # Write data rows
         for t in tickets_list:
@@ -832,8 +866,8 @@ def export_tickets():
                 t.department.Name if t.department else '',
                 t.student.FullName if t.student else '',
                 t.staff.FullName   if t.staff    else '',
-                t.CreatedAt.strftime('%Y-%m-%d %H:%M'),
-                t.ResolvedAt.strftime('%Y-%m-%d %H:%M') if t.ResolvedAt else '',
+                t.CreatedAt.strftime('%Y-%m-%d %H:%M UTC') if t.CreatedAt else '',
+                t.ResolvedAt.strftime('%Y-%m-%d %H:%M UTC') if t.ResolvedAt else '',
                 t.FeedbackRating or '',
             ])
             # Yield content chunk and reset memory buffer (StringIO) block
@@ -842,8 +876,9 @@ def export_tickets():
 
     # Return as directly downloadable file Streamed as comma separated payload
     return Response(generate(), headers={
-        'Content-Disposition': 'attachment; filename=tickets_export.csv',
-        'Content-Type': 'text/csv',
+        'Content-Disposition': f'attachment; filename=tickets_export_{timestamp}.csv',
+        'Content-Type': 'text/csv; charset=utf-8',
+        'Cache-Control': 'no-store',
     })
 
 
@@ -955,75 +990,401 @@ def reports():
     from dateutil.relativedelta import relativedelta
     from app.utils.helpers import TICKET_CATEGORIES
 
-    departments = Department.query.order_by(Department.Name).all()
-    today = datetime.utcnow()
+    now = datetime.utcnow()
+    range_key = request.args.get('range', '365').strip().lower()
+    start_raw = request.args.get('start_date', '').strip()
+    end_raw = request.args.get('end_date', '').strip()
 
-    months, month_data = [], []
-    
-    # Iterate backwards through last 12 calendar months to build ticket volume metrics chart arrays
-    for i in range(11, -1, -1):
-        start = (today - relativedelta(months=i)).replace(
-                    day=1, hour=0, minute=0, second=0, microsecond=0)
-        end   = start + relativedelta(months=1)
-        months.append(start.strftime('%b %Y'))
-        # Count creation within timeframe limits
-        month_data.append(Ticket.query.filter(
-            Ticket.CreatedAt >= start, Ticket.CreatedAt < end).count())
-
-    # Build metric dataset for how each distinct Department is performing individually
-    dept_labels, dept_resolved, dept_unresolved, dept_avg_times = [], [], [], []
-    for dept in departments:
-        total    = Ticket.query.filter_by(DepartmentId=dept.DepartmentId).count()
-        resolved = Ticket.query.filter_by(DepartmentId=dept.DepartmentId,
-                                          Status=StatusEnum.Resolved).count()
-        dept_labels.append(dept.Name)
-        dept_resolved.append(resolved)
-        dept_unresolved.append(total - resolved)
-        
-        # Calculate metric average duration elapsed prior to Resolution outcome assignment
-        rt = Ticket.query.filter(Ticket.DepartmentId == dept.DepartmentId,
-                                 Ticket.Status == StatusEnum.Resolved,
-                                 Ticket.ResolvedAt != None).all()  # noqa: E711
-        dept_avg_times.append(
-            round(sum((t.ResolvedAt - t.CreatedAt).total_seconds()
-                      for t in rt) / len(rt) / 3600, 1) if rt else 0
+    preset_days = {'30': 30, '90': 90, '365': 365}
+    if range_key in preset_days:
+        window_start = (now - timedelta(days=preset_days[range_key])).replace(
+            hour=0, minute=0, second=0, microsecond=0
         )
+        window_end = now
+    elif range_key == 'custom' and start_raw and end_raw:
+        try:
+            custom_start = datetime.strptime(start_raw, '%Y-%m-%d')
+            custom_end = datetime.strptime(end_raw, '%Y-%m-%d') + timedelta(days=1)
+            if custom_start >= custom_end:
+                raise ValueError('invalid_range')
+            window_start = custom_start
+            window_end = custom_end
+        except ValueError:
+            flash('Invalid custom date range. Falling back to last 365 days.', 'warning')
+            range_key = '365'
+            window_start = (now - timedelta(days=365)).replace(hour=0, minute=0, second=0, microsecond=0)
+            window_end = now
+    else:
+        range_key = '365'
+        window_start = (now - timedelta(days=365)).replace(hour=0, minute=0, second=0, microsecond=0)
+        window_end = now
 
-    # Static categorization breakdowns logic iteration over preset config choices
-    category_counts = [Ticket.query.filter_by(Category=cat).count()
-                       for cat in TICKET_CATEGORIES]
+    report_window_label = (
+        f"{window_start.strftime('%d %b %Y')} - {(window_end - timedelta(seconds=1)).strftime('%d %b %Y')}"
+    )
+    report_window = [
+        Ticket.CreatedAt >= window_start,
+        Ticket.CreatedAt < window_end,
+    ]
 
-    # Individual breakdown dataset generation over user-staff assignment metric success and failure percentages 
-    staff_list = User.query.filter_by(Role=RoleEnum.Staff, IsActive=True).all()
+    departments = Department.query.order_by(Department.Name).all()
+    closed_statuses = [StatusEnum.Resolved, StatusEnum.Rejected]
+
+    months, monthly_created, monthly_resolved = [], [], []
+    span_days = max(1, (window_end - window_start).days)
+    if span_days <= 45:
+        cursor = window_start
+        while cursor < window_end:
+            bucket_end = min(cursor + timedelta(days=1), window_end)
+            months.append(cursor.strftime('%d %b'))
+            monthly_created.append(Ticket.query.filter(Ticket.CreatedAt >= cursor, Ticket.CreatedAt < bucket_end).count())
+            monthly_resolved.append(Ticket.query.filter(
+                Ticket.ResolvedAt != None,  # noqa: E711
+                Ticket.ResolvedAt >= cursor,
+                Ticket.ResolvedAt < bucket_end,
+            ).count())
+            cursor = bucket_end
+    else:
+        cursor = window_start.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        while cursor < window_end:
+            bucket_end = cursor + relativedelta(months=1)
+            months.append(cursor.strftime('%b %Y'))
+            monthly_created.append(Ticket.query.filter(Ticket.CreatedAt >= cursor, Ticket.CreatedAt < bucket_end).count())
+            monthly_resolved.append(Ticket.query.filter(
+                Ticket.ResolvedAt != None,  # noqa: E711
+                Ticket.ResolvedAt >= cursor,
+                Ticket.ResolvedAt < bucket_end,
+            ).count())
+            cursor = bucket_end
+
+    total_tickets = Ticket.query.filter(*report_window).count()
+    resolved_total = Ticket.query.filter(*report_window, Ticket.Status == StatusEnum.Resolved).count()
+    open_total = Ticket.query.filter(*report_window, ~Ticket.Status.in_(closed_statuses)).count()
+    high_priority_open = Ticket.query.filter(
+        *report_window,
+        Ticket.Priority == PriorityEnum.High,
+        ~Ticket.Status.in_(closed_statuses),
+    ).count()
+
+    resolved_pairs = db.session.query(Ticket.CreatedAt, Ticket.ResolvedAt).filter(
+        *report_window,
+        Ticket.Status == StatusEnum.Resolved,
+            Ticket.ResolvedAt != None,  # noqa: E711
+    ).all()
+    avg_resolution_hours = round(
+        sum((r.ResolvedAt - r.CreatedAt).total_seconds() for r in resolved_pairs) / len(resolved_pairs) / 3600,
+        1,
+    ) if resolved_pairs else 0
+
+    staff_response_ticket_ids = {
+        ticket_id for (ticket_id,) in db.session.query(TicketUpdate.TicketId)
+        .join(User, TicketUpdate.UserId == User.UserId)
+        .join(Ticket, Ticket.TicketId == TicketUpdate.TicketId)
+        .filter(User.Role == RoleEnum.Staff)
+        .filter(*report_window)
+        .distinct()
+        .all()
+    }
+    open_rows = db.session.query(Ticket.TicketId, Ticket.DepartmentId, Ticket.CreatedAt).filter(
+        *report_window,
+        ~Ticket.Status.in_(closed_statuses)
+    ).all()
+    response_cutoff = now - relativedelta(hours=24)
+    resolution_cutoff = now - relativedelta(hours=48)
+    at_risk_start = now - relativedelta(hours=48)
+    at_risk_end = now - relativedelta(hours=42)
+
+    response_overdue = 0
+    resolution_overdue = 0
+    at_risk_resolution = 0
+    response_overdue_by_dept = defaultdict(int)
+    resolution_overdue_by_dept = defaultdict(int)
+    at_risk_by_dept = defaultdict(int)
+    open_by_dept = defaultdict(int)
+
+    for row in open_rows:
+        open_by_dept[row.DepartmentId] += 1
+        if row.CreatedAt < resolution_cutoff:
+            resolution_overdue += 1
+            resolution_overdue_by_dept[row.DepartmentId] += 1
+        elif at_risk_start <= row.CreatedAt < at_risk_end:
+            at_risk_resolution += 1
+            at_risk_by_dept[row.DepartmentId] += 1
+
+        if row.CreatedAt < response_cutoff and row.TicketId not in staff_response_ticket_ids:
+            response_overdue += 1
+            response_overdue_by_dept[row.DepartmentId] += 1
+
+    response_sla_met = max(0, open_total - response_overdue)
+    resolution_sla_met = max(0, open_total - resolution_overdue)
+    response_sla_rate = round((response_sla_met / open_total) * 100, 1) if open_total else 100.0
+    resolution_sla_rate = round((resolution_sla_met / open_total) * 100, 1) if open_total else 100.0
+
+    status_order = [
+        StatusEnum.Submitted,
+        StatusEnum.Assigned,
+        StatusEnum.InProgress,
+        StatusEnum.PendingInfo,
+        StatusEnum.Resolved,
+        StatusEnum.Rejected,
+    ]
+    status_map = {status.value: 0 for status in status_order}
+    for status_value, count in db.session.query(Ticket.Status, db.func.count(Ticket.TicketId)).filter(
+        *report_window
+    ).group_by(Ticket.Status).all():
+        status_map[status_value.value] = count
+    status_labels = [s.value for s in status_order]
+    status_counts = [status_map[s.value] for s in status_order]
+
+    priority_order = [PriorityEnum.High, PriorityEnum.Medium, PriorityEnum.Low]
+    priority_map = {priority.value: 0 for priority in priority_order}
+    for priority_value, count in db.session.query(Ticket.Priority, db.func.count(Ticket.TicketId)).filter(
+        *report_window,
+        Ticket.Priority != None  # noqa: E711
+    ).group_by(Ticket.Priority).all():
+        priority_map[priority_value.value] = count
+    priority_labels = [p.value for p in priority_order]
+    priority_counts = [priority_map[p.value] for p in priority_order]
+
+    escalation_counts = {'Pending': 0, 'Approved': 0, 'Rejected': 0}
+    for status, count in db.session.query(EscalationRequest.Status, db.func.count(EscalationRequest.EscalationId)).filter(
+        EscalationRequest.CreatedAt >= window_start,
+        EscalationRequest.CreatedAt < window_end,
+    ).group_by(EscalationRequest.Status).all():
+        escalation_counts[status] = count
+
+    reopen_counts = {'Pending': 0, 'Approved': 0, 'Rejected': 0}
+    for status, count in db.session.query(ReopenRequest.Status, db.func.count(ReopenRequest.RequestId)).filter(
+        ReopenRequest.CreatedAt >= window_start,
+        ReopenRequest.CreatedAt < window_end,
+    ).group_by(ReopenRequest.Status).all():
+        reopen_counts[status] = count
+
+    category_count_map = {cat: 0 for cat in TICKET_CATEGORIES}
+    for category, count in db.session.query(Ticket.Category, db.func.count(Ticket.TicketId)).filter(
+        *report_window
+    ).group_by(Ticket.Category).all():
+        if category in category_count_map:
+            category_count_map[category] = count
+
+    vote_count_map = defaultdict(int)
+    for category, count in db.session.query(Ticket.Category, db.func.count(TicketVote.VoteId)).join(
+        Ticket, Ticket.TicketId == TicketVote.TicketId
+    ).filter(
+        *report_window
+    ).group_by(Ticket.Category).all():
+        vote_count_map[category] = count
+
+    comment_count_map = defaultdict(int)
+    for category, count in db.session.query(Ticket.Category, db.func.count(TicketComment.CommentId)).join(
+        Ticket, Ticket.TicketId == TicketComment.TicketId
+    ).filter(
+        *report_window
+    ).group_by(Ticket.Category).all():
+        comment_count_map[category] = count
+
+    avg_rating_map = defaultdict(lambda: None)
+    for category, avg_rating in db.session.query(Ticket.Category, db.func.avg(Ticket.FeedbackRating)).filter(
+        *report_window,
+        Ticket.FeedbackRating != None  # noqa: E711
+    ).group_by(Ticket.Category).all():
+        avg_rating_map[category] = round(float(avg_rating), 1) if avg_rating is not None else None
+
+    categories = list(TICKET_CATEGORIES)
+    category_counts = [category_count_map[cat] for cat in categories]
+
+    top_categories = []
+    for cat in categories:
+        top_categories.append({
+            'name': cat,
+            'count': category_count_map[cat],
+            'votes': vote_count_map[cat],
+            'comments': comment_count_map[cat],
+            'avg_rating': avg_rating_map[cat],
+        })
+    top_categories.sort(key=lambda x: x['count'], reverse=True)
+    top_categories = [row for row in top_categories if row['count'] > 0][:10]
+
+    dept_labels = [dept.Name for dept in departments]
+    dept_resolved_map = defaultdict(int)
+    for dept_id, count in db.session.query(Ticket.DepartmentId, db.func.count(Ticket.TicketId)).filter(
+        *report_window,
+        Ticket.Status == StatusEnum.Resolved
+    ).group_by(Ticket.DepartmentId).all():
+        dept_resolved_map[dept_id] = count
+
+    dept_open = [open_by_dept[dept.DepartmentId] for dept in departments]
+    dept_resolved = [dept_resolved_map[dept.DepartmentId] for dept in departments]
+
+    dept_duration_totals = defaultdict(float)
+    dept_duration_counts = defaultdict(int)
+    for dept_id, created_at, resolved_at in db.session.query(
+        Ticket.DepartmentId,
+        Ticket.CreatedAt,
+        Ticket.ResolvedAt,
+    ).filter(
+        *report_window,
+        Ticket.Status == StatusEnum.Resolved,
+        Ticket.ResolvedAt != None,  # noqa: E711
+    ).all():
+        if not created_at or not resolved_at:
+            continue
+        dept_duration_totals[dept_id] += (resolved_at - created_at).total_seconds()
+        dept_duration_counts[dept_id] += 1
+
+    dept_health = []
+    for dept in departments:
+        dept_id = dept.DepartmentId
+        avg_hours = None
+        if dept_duration_counts[dept_id]:
+            avg_hours = round((dept_duration_totals[dept_id] / dept_duration_counts[dept_id]) / 3600, 1)
+
+        dept_total_active = open_by_dept[dept_id]
+        dept_response_rate = round(
+            ((dept_total_active - response_overdue_by_dept[dept_id]) / dept_total_active) * 100,
+            1,
+        ) if dept_total_active else 100.0
+        dept_resolution_rate = round(
+            ((dept_total_active - resolution_overdue_by_dept[dept_id]) / dept_total_active) * 100,
+            1,
+        ) if dept_total_active else 100.0
+
+        dept_health.append({
+            'name': dept.Name,
+            'resolved': dept_resolved_map[dept_id],
+            'open': dept_total_active,
+            'response_breaches': response_overdue_by_dept[dept_id],
+            'resolution_breaches': resolution_overdue_by_dept[dept_id],
+            'at_risk': at_risk_by_dept[dept_id],
+            'avg_hours': avg_hours,
+            'response_rate': dept_response_rate,
+            'resolution_rate': dept_resolution_rate,
+        })
+
+    staff_list = User.query.options(joinedload(User.department)).filter_by(
+        Role=RoleEnum.Staff,
+        IsActive=True,
+    ).order_by(User.FullName).all()
+
+    assigned_map = defaultdict(int)
+    for staff_id, count in db.session.query(Ticket.StaffId, db.func.count(Ticket.TicketId)).filter(
+        *report_window,
+        Ticket.StaffId != None  # noqa: E711
+    ).group_by(Ticket.StaffId).all():
+        assigned_map[staff_id] = count
+
+    open_assigned_map = defaultdict(int)
+    for staff_id, count in db.session.query(Ticket.StaffId, db.func.count(Ticket.TicketId)).filter(
+        *report_window,
+        Ticket.StaffId != None,  # noqa: E711
+        ~Ticket.Status.in_(closed_statuses),
+    ).group_by(Ticket.StaffId).all():
+        open_assigned_map[staff_id] = count
+
+    resolved_map = defaultdict(int)
+    duration_totals = defaultdict(float)
+    rating_totals = defaultdict(float)
+    rating_counts = defaultdict(int)
+
+    for staff_id, created_at, resolved_at, rating in db.session.query(
+        Ticket.StaffId,
+        Ticket.CreatedAt,
+        Ticket.ResolvedAt,
+        Ticket.FeedbackRating,
+    ).filter(
+        *report_window,
+        Ticket.StaffId != None,  # noqa: E711
+        Ticket.Status == StatusEnum.Resolved,
+        Ticket.ResolvedAt != None,  # noqa: E711
+    ).all():
+        resolved_map[staff_id] += 1
+        if created_at and resolved_at:
+            duration_totals[staff_id] += (resolved_at - created_at).total_seconds()
+        if rating is not None:
+            rating_totals[staff_id] += rating
+            rating_counts[staff_id] += 1
+
     staff_perf = []
-    for s in staff_list:
-        assigned   = Ticket.query.filter_by(StaffId=s.UserId).count()
-        resolved_t = Ticket.query.filter(Ticket.StaffId == s.UserId,
-                                         Ticket.Status == StatusEnum.Resolved,
-                                         Ticket.ResolvedAt != None).all()  # noqa: E711
-                                         
-        # Tally metrics determining staff hourly throughput vs peer average output limits
-        avg_hrs    = (round(sum((t.ResolvedAt - t.CreatedAt).total_seconds()
-                               for t in resolved_t) / len(resolved_t) / 3600, 1)
-                      if resolved_t else None)
-        rated      = [t for t in resolved_t if t.FeedbackRating]
-        
-        # Determine average sentiment/satisfaction metric user-scoring outcome 
-        avg_rating = (round(sum(t.FeedbackRating for t in rated) / len(rated), 1)
-                      if rated else None)
-                      
-        staff_perf.append({'staff': s, 'assigned': assigned,
-                           'resolved': len(resolved_t),
-                           'avg_hours': avg_hrs, 'avg_rating': avg_rating})
+    for staff in staff_list:
+        assigned = assigned_map[staff.UserId]
+        resolved = resolved_map[staff.UserId]
+        avg_hours = round((duration_totals[staff.UserId] / resolved) / 3600, 1) if resolved else None
+        avg_rating = round(rating_totals[staff.UserId] / rating_counts[staff.UserId], 1) if rating_counts[staff.UserId] else None
+        resolution_rate = round((resolved / assigned) * 100, 1) if assigned else 0
 
-    # Output highly complex variable package object out onto visual template framework
+        staff_perf.append({
+            'staff': staff,
+            'assigned': assigned,
+            'open_assigned': open_assigned_map[staff.UserId],
+            'resolved': resolved,
+            'resolution_rate': resolution_rate,
+            'avg_hours': avg_hours,
+            'avg_rating': avg_rating,
+        })
+
+    staff_perf.sort(key=lambda row: (row['open_assigned'], row['assigned']), reverse=True)
+
+    summary = {
+        'total_tickets': total_tickets,
+        'resolved_total': resolved_total,
+        'open_total': open_total,
+        'avg_resolution_hours': avg_resolution_hours,
+        'high_priority_open': high_priority_open,
+        'response_overdue': response_overdue,
+        'resolution_overdue': resolution_overdue,
+        'at_risk_resolution': at_risk_resolution,
+        'response_sla_rate': response_sla_rate,
+        'resolution_sla_rate': resolution_sla_rate,
+    }
+
+    report_checks = [
+        {
+            'label': 'Status Total Matches Ticket Total',
+            'ok': sum(status_counts) == total_tickets,
+            'detail': f"{sum(status_counts)} vs {total_tickets}",
+        },
+        {
+            'label': 'Category Total Matches Ticket Total',
+            'ok': sum(category_counts) == total_tickets,
+            'detail': f"{sum(category_counts)} vs {total_tickets}",
+        },
+        {
+            'label': 'Open+Resolved+Rejected Consistency',
+            'ok': (open_total + status_map[StatusEnum.Resolved.value] + status_map[StatusEnum.Rejected.value]) == total_tickets,
+            'detail': f"{open_total + status_map[StatusEnum.Resolved.value] + status_map[StatusEnum.Rejected.value]} vs {total_tickets}",
+        },
+    ]
+
+    range_state = {
+        'selected': range_key,
+        'start_date': start_raw,
+        'end_date': end_raw,
+        'window_label': report_window_label,
+    }
+
     return render_template(
         'admin/reports.html',
-        months=months, month_data=month_data,
-        dept_labels=dept_labels, dept_resolved=dept_resolved,
-        dept_unresolved=dept_unresolved, dept_avg_times=dept_avg_times,
-        categories=TICKET_CATEGORIES, category_counts=category_counts,
-        staff_perf=staff_perf, departments=departments,
+        now=now,
+        range_state=range_state,
+        report_checks=report_checks,
+        summary=summary,
+        months=months,
+        month_created=monthly_created,
+        month_resolved=monthly_resolved,
+        status_labels=status_labels,
+        status_counts=status_counts,
+        priority_labels=priority_labels,
+        priority_counts=priority_counts,
+        categories=categories,
+        category_counts=category_counts,
+        top_categories=top_categories,
+        dept_labels=dept_labels,
+        dept_resolved=dept_resolved,
+        dept_open=dept_open,
+        dept_health=dept_health,
+        staff_perf=staff_perf,
+        escalation_counts=escalation_counts,
+        reopen_counts=reopen_counts,
     )
 
 

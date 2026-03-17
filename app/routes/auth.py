@@ -6,9 +6,11 @@ from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 import threading
 import hashlib
 import secrets
+import socket
 from werkzeug.security import generate_password_hash
 from app import db
 from app.models.user import User, RoleEnum
+from app.models.ticket import Ticket
 from app.models.pending_registration import PendingRegistration
 from app.utils.helpers import log_audit
 from app import mail
@@ -17,6 +19,49 @@ from app import mail
 auth_bp = Blueprint('auth', __name__)
 STUDENT_EMAIL_DOMAIN = '@dut4life.ac.za'
 STAFF_ADMIN_EMAIL_DOMAIN = '@dut.ac.za'
+
+
+def _default_role_home() -> str:
+    if not current_user.is_authenticated:
+        return url_for('auth.login')
+    if current_user.Role == RoleEnum.Student:
+        return url_for('student.dashboard')
+    if current_user.Role == RoleEnum.Staff:
+        return url_for('staff.dashboard')
+    if current_user.Role == RoleEnum.Admin:
+        return url_for('admin.dashboard')
+    return url_for('auth.index')
+
+
+@auth_bp.route('/track-ticket')
+@login_required
+def track_ticket_global():
+    ref = request.args.get('ref', '').strip().upper()
+    if not ref:
+        flash('Enter a tracking reference to search.', 'warning')
+        return redirect(request.referrer or _default_role_home())
+
+    ticket = Ticket.query.filter_by(TrackingRef=ref).first()
+    if not ticket:
+        flash(f'No ticket found for reference {ref}.', 'danger')
+        return redirect(request.referrer or _default_role_home())
+
+    if current_user.Role == RoleEnum.Student:
+        if ticket.StudentId != current_user.UserId:
+            flash('This ticket is not linked to your student account.', 'warning')
+            return redirect(url_for('student.dashboard'))
+        return redirect(url_for('student.view_ticket', ticket_id=ticket.TicketId))
+
+    if current_user.Role == RoleEnum.Staff:
+        if ticket.StaffId != current_user.UserId:
+            flash('This ticket is not currently assigned to you.', 'warning')
+            return redirect(url_for('staff.dashboard'))
+        return redirect(url_for('staff.view_ticket', ticket_id=ticket.TicketId))
+
+    if current_user.Role == RoleEnum.Admin:
+        return redirect(url_for('admin.ticket_detail', ticket_id=ticket.TicketId))
+
+    return redirect(_default_role_home())
 
 
 def _password_requirement_error(password: str):
@@ -80,6 +125,14 @@ def _send_password_reset_email(user: User, token: str):
         'If you did not request this, you can ignore this message.\n'
     )
     try:
+        if not _smtp_reachable():
+            current_app.logger.error(
+                'Password reset email not sent: SMTP host is unreachable (%s:%s).',
+                current_app.config.get('MAIL_SERVER'),
+                current_app.config.get('MAIL_PORT'),
+            )
+            return
+
         msg = Message(
             subject='[DUT Grievance Portal] Password Reset Request',
             recipients=[user.Email],
@@ -116,6 +169,23 @@ def _build_verification_token(pending: PendingRegistration) -> str:
     return _token_serializer().dumps(payload, salt='email-verify')
 
 
+def _smtp_reachable() -> bool:
+    if bool(current_app.config.get('MAIL_SUPPRESS_SEND', False)):
+        return True
+
+    host = (current_app.config.get('MAIL_SERVER') or '').strip()
+    port = int(current_app.config.get('MAIL_PORT', 587) or 587)
+    if not host:
+        return False
+
+    timeout = float(current_app.config.get('MAIL_CONNECT_TIMEOUT_SECONDS', 3))
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
 def _send_verification_email(pending: PendingRegistration, token: str):
     verify_link = url_for('auth.verify_email', token=token, _external=True)
     body = (
@@ -127,6 +197,14 @@ def _send_verification_email(pending: PendingRegistration, token: str):
         'If you did not request this registration, you can ignore this message.\n'
     )
     try:
+        if not _smtp_reachable():
+            current_app.logger.error(
+                'Verification email not sent: SMTP host is unreachable (%s:%s).',
+                current_app.config.get('MAIL_SERVER'),
+                current_app.config.get('MAIL_PORT'),
+            )
+            return False
+
         msg = Message(
             subject='[DUT Grievance Portal] Verify Your Email',
             recipients=[pending.Email],
@@ -146,8 +224,10 @@ def _send_verification_email(pending: PendingRegistration, token: str):
             args=(app_obj, msg, pending.Email),
             daemon=True,
         ).start()
+        return True
     except Exception:
         current_app.logger.exception('Failed sending verification email to %s', pending.Email)
+        return False
 
 
 def _issue_pending_verification(full_name: str, email: str, password: str, role: RoleEnum):
@@ -189,8 +269,8 @@ def _issue_pending_verification(full_name: str, email: str, password: str, role:
     db.session.flush()
 
     token = _build_verification_token(pending)
-    _send_verification_email(pending, token)
-    return pending
+    sent_ok = _send_verification_email(pending, token)
+    return pending, sent_ok
 
 
 def _resolve_pending_registration(token: str):
@@ -326,13 +406,20 @@ def register():
             flash('Email already registered.', 'danger')
             return render_template('auth/register.html')
 
-        _issue_pending_verification(full_name, email, password, role)
+        _, sent_ok = _issue_pending_verification(full_name, email, password, role)
         db.session.commit()
 
-        flash(
-            'Verification email sent. Please click the link in your inbox to activate your account.',
-            'info'
-        )
+        if sent_ok:
+            flash(
+                'Verification email sent. Please click the link in your inbox to activate your account.',
+                'info'
+            )
+        else:
+            flash(
+                'Registration saved, but email delivery is currently unavailable. '
+                'Please try Resend Verification shortly or contact support.',
+                'warning'
+            )
         return redirect(url_for('auth.login'))
 
     # Deliver view-state render configuration for users navigating into the web portal registration area
@@ -344,6 +431,10 @@ def verify_email(token):
     pending, error = _resolve_pending_registration(token)
     if error:
         flash(error, 'danger')
+        if 'already been used' in error.lower():
+            if current_user.is_authenticated:
+                logout_user()
+            return redirect(url_for('auth.login'))
         return redirect(url_for('auth.register'))
 
     if User.query.filter_by(Email=pending.Email).first():
@@ -398,10 +489,13 @@ def resend_verification():
     db.session.flush()
 
     token = _build_verification_token(pending)
-    _send_verification_email(pending, token)
+    sent_ok = _send_verification_email(pending, token)
     db.session.commit()
 
-    flash('Verification email re-sent. Check your inbox.', 'success')
+    if sent_ok:
+        flash('Verification email re-sent. Check your inbox.', 'success')
+    else:
+        flash('Email delivery is currently unavailable. Please try again shortly.', 'warning')
     return redirect(url_for('auth.login'))
 
 

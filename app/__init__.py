@@ -17,7 +17,10 @@ login_manager.login_view              = 'auth.login'
 login_manager.login_message_category  = 'info'
 
 
-def create_app(config_name='default'):
+def create_app(config_name=None):
+    if not config_name:
+        import os
+        config_name = os.environ.get('FLASK_CONFIG', 'production')
     app = Flask(__name__, instance_relative_config=True)
     app.config.from_object(config[config_name])
 
@@ -85,6 +88,10 @@ def create_app(config_name='default'):
             'admin_unread_count'  : admin_unread_count,
             'user_unread_count'   : user_unread_count,
             'pending_actions_count': pending_actions_count,
+            'realtime_enabled'    : bool(app.config.get('REALTIME_ENABLED', True)),
+            'poll_interval_ms'    : max(5000, int(app.config.get('POLL_INTERVAL_SECONDS', 10)) * 1000),
+            'poll_timeout_ms'     : max(2000, int(app.config.get('POLL_TIMEOUT_SECONDS', 8)) * 1000),
+            'poll_max_backoff_ms' : max(10000, int(app.config.get('POLL_MAX_BACKOFF_SECONDS', 30)) * 1000),
         }
 
     # ── Blueprints ────────────────────────────────────────────────────────────

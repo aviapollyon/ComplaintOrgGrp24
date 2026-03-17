@@ -91,7 +91,16 @@
             <label class="form-label fw-semibold small">Password</label>
             <div class="input-icon-wrap">
               <i class="bi bi-lock input-icon"></i>
-              <input type="password" name="password" class="form-control" placeholder="Create a strong password" required/>
+              <input type="password" name="password" class="form-control has-password-toggle" placeholder="Create a strong password" required/>
+              <button
+                type="button"
+                class="password-toggle-btn"
+                data-password-toggle
+                aria-label="Show password"
+                aria-pressed="false"
+              >
+                <i class="bi bi-eye" aria-hidden="true"></i>
+              </button>
             </div>
           </div>
           <div class="form-text mb-3">

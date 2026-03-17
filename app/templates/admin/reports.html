@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Reports & Analytics — Admin{% endblock %}
+{% block title %}Reports & Analytics - Admin{% endblock %}
 
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
@@ -11,157 +11,262 @@
     .container { max-width: 100% !important; }
     canvas { max-height: 220px !important; }
   }
-  .metric-card { border-left: 4px solid; }
-  .metric-card.primary   { border-color: #0d6efd; }
-  .metric-card.success   { border-color: #198754; }
-  .metric-card.warning   { border-color: #ffc107; }
-  .metric-card.info      { border-color: #0dcaf0; }
-  .chart-container { position: relative; height: 260px; }
+
+  .report-kpi {
+    border: 1px solid color-mix(in srgb, #1a3a6b 14%, var(--bs-border-color));
+    border-radius: 0.8rem;
+    background: color-mix(in srgb, #1a3a6b 2%, var(--bs-body-bg));
+    height: 100%;
+  }
+
+  .report-kpi .kpi-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+
+  .report-kpi .kpi-label {
+    font-size: 0.78rem;
+    color: var(--bs-secondary-color);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+  }
+
+  .chart-wrap {
+    position: relative;
+    height: 300px;
+  }
+
+  .chart-wrap.chart-wrap-sm {
+    height: 250px;
+  }
+
+  .metric-chip {
+    border-radius: 999px;
+    padding: 0.25rem 0.65rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+  }
+
+  .metric-chip.good {
+    color: #14532d;
+    background: #dcfce7;
+    border-color: #bbf7d0;
+  }
+
+  .metric-chip.warn {
+    color: #92400e;
+    background: #fef3c7;
+    border-color: #fde68a;
+  }
+
+  .metric-chip.bad {
+    color: #991b1b;
+    background: #fee2e2;
+    border-color: #fecaca;
+  }
+
+  @media (max-width: 991.98px) {
+    .chart-wrap,
+    .chart-wrap.chart-wrap-sm {
+      height: 230px;
+    }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-{# ── Page header ── #}
-<div class="d-flex justify-content-between align-items-center mb-4 no-print">
-  <h3 class="mb-0"><i class="bi bi-bar-chart-fill me-2 text-primary"></i>Reports &amp; Analytics</h3>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4 no-print">
+  <div>
+    <h3 class="mb-1"><i class="bi bi-bar-chart-fill me-2 text-primary"></i>Reports and Analytics</h3>
+    <p class="text-muted small mb-0">Operational health snapshot for tickets, SLA, teams, and escalations.</p>
+    <div class="small text-muted">Window: <strong>{{ range_state.window_label }}</strong></div>
+  </div>
   <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
     <i class="bi bi-printer me-1"></i>Print / Save PDF
   </button>
 </div>
-<div class="text-muted small mb-4 d-none d-print-block">
-  DUT Grievance Portal — Analytics Report &nbsp;|&nbsp; Generated: {{ now.strftime('%d %B %Y %H:%M') }}
+
+<div class="card border-0 shadow-sm mb-4 no-print">
+  <div class="card-body py-3">
+    <form method="GET" class="row g-2 align-items-end">
+      <div class="col-12 col-md-3">
+        <label class="form-label small fw-semibold">Date Range</label>
+        <select id="reportRangeSelect" name="range" class="form-select form-select-sm">
+          <option value="30" {{ 'selected' if range_state.selected == '30' else '' }}>Last 30 days</option>
+          <option value="90" {{ 'selected' if range_state.selected == '90' else '' }}>Last 90 days</option>
+          <option value="365" {{ 'selected' if range_state.selected == '365' else '' }}>Last 365 days</option>
+          <option value="custom" {{ 'selected' if range_state.selected == 'custom' else '' }}>Custom range</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-3 custom-range-field {{ '' if range_state.selected == 'custom' else 'd-none' }}">
+        <label class="form-label small fw-semibold">Start</label>
+        <input type="date" name="start_date" class="form-control form-control-sm" value="{{ range_state.start_date }}"/>
+      </div>
+      <div class="col-6 col-md-3 custom-range-field {{ '' if range_state.selected == 'custom' else 'd-none' }}">
+        <label class="form-label small fw-semibold">End</label>
+        <input type="date" name="end_date" class="form-control form-control-sm" value="{{ range_state.end_date }}"/>
+      </div>
+      <div class="col-12 col-md-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary btn-sm w-100"><i class="bi bi-funnel me-1"></i>Apply</button>
+        <a href="{{ url_for('admin.reports') }}" class="btn btn-outline-secondary btn-sm w-100">Reset</a>
+      </div>
+    </form>
+  </div>
 </div>
 
-{# ── Summary KPIs ── #}
-{% set total_tickets   = month_data | sum %}
-{% set total_resolved  = dept_resolved | sum %}
-{% set total_open      = dept_unresolved | sum %}
-{% set overall_avg     = (dept_avg_times | select('>', 0) | list) %}
-{% set avg_resolution  = (overall_avg | sum / overall_avg | length) | round(1) if overall_avg else 0 %}
+<div class="text-muted small mb-3 d-none d-print-block">
+  DUT Grievance Portal - Generated: {{ now.strftime('%d %B %Y %H:%M UTC') }}
+</div>
 
 <div class="row g-3 mb-4">
-  <div class="col-6 col-md-3">
-    <div class="card shadow-sm border-0 metric-card primary h-100">
+  <div class="col-6 col-xl-3">
+    <article class="report-kpi p-3">
+      <div class="kpi-label">Total Tickets</div>
+      <div class="kpi-value text-primary">{{ summary.total_tickets }}</div>
+      <div class="small text-muted">In selected window</div>
+    </article>
+  </div>
+  <div class="col-6 col-xl-3">
+    <article class="report-kpi p-3">
+      <div class="kpi-label">Open Backlog</div>
+      <div class="kpi-value text-warning">{{ summary.open_total }}</div>
+      <div class="small text-muted">Window-scoped open tickets</div>
+    </article>
+  </div>
+  <div class="col-6 col-xl-3">
+    <article class="report-kpi p-3">
+      <div class="kpi-label">Resolved</div>
+      <div class="kpi-value text-success">{{ summary.resolved_total }}</div>
+      <div class="small text-muted">Closed with resolution</div>
+    </article>
+  </div>
+  <div class="col-6 col-xl-3">
+    <article class="report-kpi p-3">
+      <div class="kpi-label">Avg Resolution</div>
+      <div class="kpi-value text-info">{{ summary.avg_resolution_hours }}h</div>
+      <div class="small text-muted">Resolved tickets only</div>
+    </article>
+  </div>
+  <div class="col-6 col-xl-3">
+    <article class="report-kpi p-3">
+      <div class="kpi-label">High Priority Open</div>
+      <div class="kpi-value text-danger">{{ summary.high_priority_open }}</div>
+      <div class="small text-muted">Needs close attention</div>
+    </article>
+  </div>
+  <div class="col-6 col-xl-3">
+    <article class="report-kpi p-3">
+      <div class="kpi-label">Response SLA Met</div>
+      <div class="kpi-value {{ 'text-success' if summary.response_sla_rate >= 85 else ('text-warning' if summary.response_sla_rate >= 70 else 'text-danger') }}">{{ summary.response_sla_rate }}%</div>
+      <div class="small text-muted">Open-ticket first response</div>
+    </article>
+  </div>
+  <div class="col-6 col-xl-3">
+    <article class="report-kpi p-3">
+      <div class="kpi-label">Resolution SLA Met</div>
+      <div class="kpi-value {{ 'text-success' if summary.resolution_sla_rate >= 85 else ('text-warning' if summary.resolution_sla_rate >= 70 else 'text-danger') }}">{{ summary.resolution_sla_rate }}%</div>
+      <div class="small text-muted">Open-ticket deadline health</div>
+    </article>
+  </div>
+  <div class="col-6 col-xl-3">
+    <article class="report-kpi p-3">
+      <div class="kpi-label">SLA Breaches</div>
+      <div class="kpi-value text-danger">{{ summary.response_overdue + summary.resolution_overdue }}</div>
+      <div class="small text-muted">Resp: {{ summary.response_overdue }} | Res: {{ summary.resolution_overdue }}</div>
+    </article>
+  </div>
+</div>
+
+<div class="row g-4 mb-4">
+  <div class="col-12 col-xl-8">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-activity me-1"></i>Ticket Throughput Trend
+      </div>
       <div class="card-body">
-        <div class="fs-2 fw-bold text-primary">{{ total_tickets }}</div>
-        <div class="small text-muted">Tickets (Last 12 Months)</div>
+        <div class="chart-wrap">
+          <canvas id="throughputChart"></canvas>
+        </div>
       </div>
     </div>
   </div>
-  <div class="col-6 col-md-3">
-    <div class="card shadow-sm border-0 metric-card success h-100">
-      <div class="card-body">
-        <div class="fs-2 fw-bold text-success">{{ total_resolved }}</div>
-        <div class="small text-muted">Total Resolved</div>
+  <div class="col-12 col-xl-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-diagram-3 me-1"></i>Status Flow
       </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card shadow-sm border-0 metric-card warning h-100">
       <div class="card-body">
-        <div class="fs-2 fw-bold text-warning">{{ total_open }}</div>
-        <div class="small text-muted">Currently Open</div>
-      </div>
-    </div>
-  </div>
-  <div class="col-6 col-md-3">
-    <div class="card shadow-sm border-0 metric-card info h-100">
-      <div class="card-body">
-        <div class="fs-2 fw-bold text-info">{{ avg_resolution }}h</div>
-        <div class="small text-muted">Avg Resolution Time</div>
+        <div class="chart-wrap chart-wrap-sm">
+          <canvas id="statusChart"></canvas>
+        </div>
       </div>
     </div>
   </div>
 </div>
 
-{# ── Monthly Volume Chart ── #}
 <div class="row g-4 mb-4">
-  <div class="col-lg-8">
-    <div class="card shadow-sm border-0 h-100">
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-header fw-semibold">
-        <i class="bi bi-graph-up me-1"></i>Monthly Ticket Volume (Last 12 Months)
+        <i class="bi bi-tags me-1"></i>Top Issue Categories
       </div>
       <div class="card-body">
-        <div class="chart-container">
-          <canvas id="monthlyChart"></canvas>
+        <div class="chart-wrap chart-wrap-sm">
+          <canvas id="categoryChart"></canvas>
         </div>
       </div>
     </div>
   </div>
-
-  {# ── Complaints per Category (top 5) ── #}
-  <div class="col-lg-4">
-    <div class="card shadow-sm border-0 h-100">
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 shadow-sm h-100">
       <div class="card-header fw-semibold">
-        <i class="bi bi-tags me-1"></i>Most Common Issues
+        <i class="bi bi-building me-1"></i>Department Workload
       </div>
       <div class="card-body">
-        <div class="chart-container">
-          <canvas id="categoryDoughnut"></canvas>
+        <div class="chart-wrap chart-wrap-sm">
+          <canvas id="departmentChart"></canvas>
         </div>
       </div>
     </div>
   </div>
 </div>
 
-{# ── Category Breakdown Table ── #}
 <div class="row g-4 mb-4">
-  <div class="col-lg-6">
-    <div class="card shadow-sm border-0">
+  <div class="col-12 col-xl-8">
+    <div class="card border-0 shadow-sm">
       <div class="card-header fw-semibold">
-        <i class="bi bi-list-ol me-1"></i>Complaints per Category
+        <i class="bi bi-shield-exclamation me-1"></i>Department SLA Health
       </div>
       <div class="table-responsive">
         <table class="table table-sm table-hover align-middle mb-0">
           <thead class="table-light">
-            <tr><th>Category</th><th class="text-end">Tickets</th><th>Share</th></tr>
-          </thead>
-          <tbody>
-            {% set grand_total = category_counts | sum %}
-            {% for i in range(categories | length) %}
-            {% set pct = ((category_counts[i] / grand_total * 100) | round(1)) if grand_total else 0 %}
             <tr>
-              <td class="small">{{ categories[i] }}</td>
-              <td class="text-end small fw-semibold">{{ category_counts[i] }}</td>
-              <td style="width:40%;">
-                <div class="d-flex align-items-center gap-2">
-                  <div class="progress flex-grow-1" style="height:8px;">
-                    <div class="progress-bar bg-primary" style="width:{{ pct }}%"></div>
-                  </div>
-                  <span class="small text-muted" style="min-width:40px;">{{ pct }}%</span>
-                </div>
-              </td>
+              <th>Department</th>
+              <th class="text-end">Open</th>
+              <th class="text-end">Resolved</th>
+              <th class="text-end">Resp Breaches</th>
+              <th class="text-end">Res Breaches</th>
+              <th class="text-end">At Risk</th>
+              <th class="text-end">Avg Hours</th>
             </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
-
-  {# ── Average Resolution Time per Dept ── #}
-  <div class="col-lg-6">
-    <div class="card shadow-sm border-0">
-      <div class="card-header fw-semibold">
-        <i class="bi bi-clock-history me-1"></i>Average Resolution Time by Department
-      </div>
-      <div class="table-responsive">
-        <table class="table table-sm table-hover align-middle mb-0">
-          <thead class="table-light">
-            <tr><th>Department</th><th class="text-end">Resolved</th><th class="text-end">Avg Hours</th></tr>
           </thead>
           <tbody>
-            {% for i in range(dept_labels | length) %}
+            {% for row in dept_health %}
             <tr>
-              <td class="small">{{ dept_labels[i] }}</td>
-              <td class="text-end small">{{ dept_resolved[i] }}</td>
+              <td class="small fw-semibold">{{ row.name }}</td>
+              <td class="text-end small">{{ row.open }}</td>
+              <td class="text-end small">{{ row.resolved }}</td>
+              <td class="text-end small {{ 'text-danger' if row.response_breaches else 'text-muted' }}">{{ row.response_breaches }}</td>
+              <td class="text-end small {{ 'text-danger' if row.resolution_breaches else 'text-muted' }}">{{ row.resolution_breaches }}</td>
+              <td class="text-end small {{ 'text-warning' if row.at_risk else 'text-muted' }}">{{ row.at_risk }}</td>
               <td class="text-end small">
-                {% if dept_avg_times[i] > 0 %}
-                  <span class="{{ 'text-success' if dept_avg_times[i] < 24 else ('text-warning' if dept_avg_times[i] < 72 else 'text-danger') }}">
-                    {{ dept_avg_times[i] }}h
-                  </span>
+                {% if row.avg_hours is not none %}
+                  <span class="{{ 'text-success' if row.avg_hours < 24 else ('text-warning' if row.avg_hours < 48 else 'text-danger') }}">{{ row.avg_hours }}h</span>
                 {% else %}
-                  <span class="text-muted">—</span>
+                  <span class="text-muted">-</span>
                 {% endif %}
               </td>
             </tr>
@@ -171,158 +276,250 @@
       </div>
     </div>
   </div>
-</div>
 
-{# ── Department Resolved vs Open Chart ── #}
-<div class="row g-4 mb-4">
-  <div class="col-12">
-    <div class="card shadow-sm border-0">
+  <div class="col-12 col-xl-4">
+    <div class="card border-0 shadow-sm mb-4">
       <div class="card-header fw-semibold">
-        <i class="bi bi-building me-1"></i>Department Performance — Resolved vs Open
+        <i class="bi bi-arrow-up-right-circle me-1"></i>Escalations
       </div>
-      <div class="card-body">
-        <div class="chart-container" style="height:300px;">
-          <canvas id="deptBarChart"></canvas>
+      <div class="card-body d-grid gap-2">
+        <div class="d-flex justify-content-between"><span class="small">Pending</span><span class="metric-chip warn">{{ escalation_counts.Pending }}</span></div>
+        <div class="d-flex justify-content-between"><span class="small">Approved</span><span class="metric-chip good">{{ escalation_counts.Approved }}</span></div>
+        <div class="d-flex justify-content-between"><span class="small">Rejected</span><span class="metric-chip bad">{{ escalation_counts.Rejected }}</span></div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-arrow-repeat me-1"></i>Reopen Requests
+      </div>
+      <div class="card-body d-grid gap-2">
+        <div class="d-flex justify-content-between"><span class="small">Pending</span><span class="metric-chip warn">{{ reopen_counts.Pending }}</span></div>
+        <div class="d-flex justify-content-between"><span class="small">Approved</span><span class="metric-chip good">{{ reopen_counts.Approved }}</span></div>
+        <div class="d-flex justify-content-between"><span class="small">Rejected</span><span class="metric-chip bad">{{ reopen_counts.Rejected }}</span></div>
+      </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mt-4">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-clipboard-check me-1"></i>Data Consistency Checks
+      </div>
+      <div class="card-body d-grid gap-2">
+        {% for check in report_checks %}
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <span class="small">{{ check.label }}</span>
+          <span class="metric-chip {{ 'good' if check.ok else 'bad' }}">{{ 'PASS' if check.ok else 'FAIL' }}</span>
         </div>
+        <div class="small text-muted" style="margin-top:-0.25rem;">{{ check.detail }}</div>
+        {% endfor %}
       </div>
     </div>
   </div>
 </div>
 
-{# ── Staff Performance Table ── #}
-<div class="card shadow-sm border-0 mb-4">
-  <div class="card-header fw-semibold">
-    <i class="bi bi-person-badge me-1"></i>Staff Performance
+<div class="row g-4">
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-fire me-1"></i>Trending Categories (Volume + Engagement)
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Category</th>
+              <th class="text-end">Tickets</th>
+              <th class="text-end">Votes</th>
+              <th class="text-end">Comments</th>
+              <th class="text-end">Avg Rating</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in top_categories %}
+            <tr>
+              <td class="small fw-semibold">{{ row.name }}</td>
+              <td class="text-end small">{{ row.count }}</td>
+              <td class="text-end small">{{ row.votes }}</td>
+              <td class="text-end small">{{ row.comments }}</td>
+              <td class="text-end small">
+                {% if row.avg_rating is not none %}
+                  <span class="text-warning fw-semibold">{{ row.avg_rating }}</span>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="5" class="text-center small text-muted py-3">No category data yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
-  <div class="table-responsive">
-    <table class="table table-sm table-hover align-middle mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>Staff Member</th>
-          <th>Department</th>
-          <th class="text-end">Assigned</th>
-          <th class="text-end">Resolved</th>
-          <th class="text-end">Resolution Rate</th>
-          <th class="text-end">Avg Hours</th>
-          <th class="text-end">Avg Rating</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for sp in staff_perf %}
-        {% set rate = ((sp.resolved / sp.assigned * 100) | round(1)) if sp.assigned else 0 %}
-        <tr>
-          <td class="small fw-semibold">{{ sp.staff.FullName }}</td>
-          <td class="small text-muted">{{ sp.staff.department.Name if sp.staff.department else '—' }}</td>
-          <td class="text-end small">{{ sp.assigned }}</td>
-          <td class="text-end small text-success">{{ sp.resolved }}</td>
-          <td class="text-end small">
-            <div class="d-flex align-items-center justify-content-end gap-2">
-              <div class="progress" style="width:60px;height:6px;">
-                <div class="progress-bar {{ 'bg-success' if rate >= 70 else ('bg-warning' if rate >= 40 else 'bg-danger') }}"
-                     style="width:{{ rate }}%"></div>
-              </div>
-              {{ rate }}%
-            </div>
-          </td>
-          <td class="text-end small">
-            {% if sp.avg_hours %}
-              <span class="{{ 'text-success' if sp.avg_hours < 24 else ('text-warning' if sp.avg_hours < 72 else 'text-danger') }}">
-                {{ sp.avg_hours }}h
-              </span>
-            {% else %}—{% endif %}
-          </td>
-          <td class="text-end small">
-            {% if sp.avg_rating %}
-              {% for i in range(sp.avg_rating | int) %}<i class="bi bi-star-fill text-warning" style="font-size:0.75rem;"></i>{% endfor %}
-              {{ sp.avg_rating }}
-            {% else %}—{% endif %}
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="text-center text-muted small py-3">No staff data available.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+
+  <div class="col-12 col-xl-6">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header fw-semibold">
+        <i class="bi bi-person-badge me-1"></i>Staff Workload and Resolution Performance
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Staff</th>
+              <th class="text-end">Open</th>
+              <th class="text-end">Assigned</th>
+              <th class="text-end">Resolved</th>
+              <th class="text-end">Rate</th>
+              <th class="text-end">Avg Hours</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in staff_perf %}
+            <tr>
+              <td class="small fw-semibold">
+                {{ row.staff.FullName }}
+                <div class="text-muted" style="font-size:0.72rem;">{{ row.staff.department.Name if row.staff.department else '-' }}</div>
+              </td>
+              <td class="text-end small {{ 'text-danger' if row.open_assigned >= 8 else ('text-warning' if row.open_assigned >= 4 else 'text-muted') }}">{{ row.open_assigned }}</td>
+              <td class="text-end small">{{ row.assigned }}</td>
+              <td class="text-end small text-success">{{ row.resolved }}</td>
+              <td class="text-end small">{{ row.resolution_rate }}%</td>
+              <td class="text-end small">
+                {% if row.avg_hours is not none %}
+                  <span class="{{ 'text-success' if row.avg_hours < 24 else ('text-warning' if row.avg_hours < 48 else 'text-danger') }}">{{ row.avg_hours }}h</span>
+                {% else %}
+                  <span class="text-muted">-</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="6" class="text-center small text-muted py-3">No staff performance data.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
 </div>
-
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-const MONTHS   = {{ months | tojson }};
-const MDATA    = {{ month_data | tojson }};
-const CATS     = {{ categories | tojson }};
-const CCOUNTS  = {{ category_counts | tojson }};
-const DLABELS  = {{ dept_labels | tojson }};
-const DRESOLVED= {{ dept_resolved | tojson }};
-const DOPEN    = {{ dept_unresolved | tojson }};
+const MONTHS = {{ months | tojson }};
+const MONTH_CREATED = {{ month_created | tojson }};
+const MONTH_RESOLVED = {{ month_resolved | tojson }};
+const STATUS_LABELS = {{ status_labels | tojson }};
+const STATUS_COUNTS = {{ status_counts | tojson }};
+const CATEGORY_LABELS = {{ categories | tojson }};
+const CATEGORY_COUNTS = {{ category_counts | tojson }};
+const DEPT_LABELS = {{ dept_labels | tojson }};
+const DEPT_RESOLVED = {{ dept_resolved | tojson }};
+const DEPT_OPEN = {{ dept_open | tojson }};
 
-// Palette helpers
-const PALETTE = [
-  '#0d6efd','#198754','#ffc107','#dc3545','#0dcaf0',
-  '#6f42c1','#fd7e14','#20c997','#d63384','#6c757d',
-  '#0a58ca','#146c43','#997404','#842029','#087990',
-  '#432874','#984c14',
-];
-
-// ── Monthly Volume ──
-new Chart(document.getElementById('monthlyChart'), {
-  type: 'line',
+new Chart(document.getElementById('throughputChart'), {
+  type: 'bar',
   data: {
     labels: MONTHS,
-    datasets: [{
-      label: 'Tickets Submitted',
-      data: MDATA,
-      borderColor: '#0d6efd',
-      backgroundColor: 'rgba(13,110,253,0.08)',
-      tension: 0.3,
-      fill: true,
-      pointBackgroundColor: '#0d6efd',
-    }]
+    datasets: [
+      {
+        type: 'bar',
+        label: 'Created',
+        data: MONTH_CREATED,
+        backgroundColor: 'rgba(37, 99, 235, 0.3)',
+        borderColor: 'rgba(37, 99, 235, 0.9)',
+        borderWidth: 1,
+      },
+      {
+        type: 'line',
+        label: 'Resolved',
+        data: MONTH_RESOLVED,
+        borderColor: '#15803d',
+        backgroundColor: 'rgba(21, 128, 61, 0.15)',
+        tension: 0.3,
+        fill: false,
+      }
+    ]
   },
   options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { beginAtZero: true, ticks: { stepSize: 1 } }
-    }
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'top' } },
+    scales: { y: { beginAtZero: true } }
   }
 });
 
-// ── Category Doughnut (top 8) ──
-const sortIdx = [...Array(CATS.length).keys()].sort((a,b) => CCOUNTS[b]-CCOUNTS[a]).slice(0,8);
-new Chart(document.getElementById('categoryDoughnut'), {
+new Chart(document.getElementById('statusChart'), {
   type: 'doughnut',
   data: {
-    labels: sortIdx.map(i => CATS[i]),
+    labels: STATUS_LABELS,
     datasets: [{
-      data: sortIdx.map(i => CCOUNTS[i]),
-      backgroundColor: sortIdx.map((_,i) => PALETTE[i % PALETTE.length]),
+      data: STATUS_COUNTS,
+      backgroundColor: ['#64748b','#2563eb','#0ea5e9','#f59e0b','#16a34a','#dc2626'],
       borderWidth: 2,
     }]
   },
   options: {
-    responsive: true, maintainAspectRatio: false,
-    plugins: { legend: { position: 'right', labels: { font: { size: 11 } } } }
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { position: 'bottom', labels: { boxWidth: 12 } } }
   }
 });
 
-// ── Department Bar ──
-new Chart(document.getElementById('deptBarChart'), {
+const categoryOrder = [...Array(CATEGORY_LABELS.length).keys()]
+  .sort((a, b) => CATEGORY_COUNTS[b] - CATEGORY_COUNTS[a])
+  .slice(0, 10);
+
+new Chart(document.getElementById('categoryChart'), {
   type: 'bar',
   data: {
-    labels: DLABELS,
+    labels: categoryOrder.map(i => CATEGORY_LABELS[i]),
+    datasets: [{
+      label: 'Tickets',
+      data: categoryOrder.map(i => CATEGORY_COUNTS[i]),
+      backgroundColor: '#1d4f91',
+    }]
+  },
+  options: {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: { x: { beginAtZero: true } }
+  }
+});
+
+new Chart(document.getElementById('departmentChart'), {
+  type: 'bar',
+  data: {
+    labels: DEPT_LABELS,
     datasets: [
-      { label: 'Resolved', data: DRESOLVED, backgroundColor: '#198754' },
-      { label: 'Open',     data: DOPEN,     backgroundColor: '#dc3545' },
+      { label: 'Open', data: DEPT_OPEN, backgroundColor: '#f59e0b' },
+      { label: 'Resolved', data: DEPT_RESOLVED, backgroundColor: '#16a34a' }
     ]
   },
   options: {
-    responsive: true, maintainAspectRatio: false,
+    responsive: true,
+    maintainAspectRatio: false,
     plugins: { legend: { position: 'top' } },
     scales: { x: { stacked: true }, y: { stacked: true, beginAtZero: true } }
   }
 });
+
+(function () {
+  var rangeSelect = document.getElementById('reportRangeSelect');
+  if (!rangeSelect) {
+    return;
+  }
+  function syncCustomRangeVisibility() {
+    var isCustom = rangeSelect.value === 'custom';
+    document.querySelectorAll('.custom-range-field').forEach(function (el) {
+      el.classList.toggle('d-none', !isCustom);
+    });
+  }
+  rangeSelect.addEventListener('change', syncCustomRangeVisibility);
+  syncCustomRangeVisibility();
+})();
 </script>
 {% endblock %}

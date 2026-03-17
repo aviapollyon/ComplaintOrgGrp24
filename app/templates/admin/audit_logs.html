@@ -113,7 +113,7 @@
               {% set _ = sort_args.update({'sort': 'asc', 'page': '1'}) %}
             {% endif %}
             <a href="{{ request.path }}?{{ sort_args | urlencode }}"
-               class="text-decoration-none text-dark d-inline-flex align-items-center gap-1"
+              class="text-decoration-none text-dark d-inline-flex align-items-center gap-1 sortable-header"
                title="Sort by date {{ 'oldest first' if sort == 'desc' else 'newest first' }}">
               Timestamp
               <i class="bi {{ 'bi-sort-up' if sort == 'asc' else 'bi-sort-down' }} text-primary"></i>

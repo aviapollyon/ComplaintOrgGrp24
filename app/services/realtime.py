@@ -1,4 +1,3 @@
-import json
 import threading
 from collections import defaultdict, deque
 
@@ -34,12 +33,3 @@ def wait_for_events(user_id: int, timeout_seconds: int = 15):
         events = list(_queues[int(user_id)])
         _queues[int(user_id)].clear()
         return events
-
-
-def sse_frame(event_type: str, payload: dict, event_id: str = '') -> str:
-    lines = []
-    if event_id:
-        lines.append(f'id: {event_id}')
-    lines.append(f'event: {event_type}')
-    lines.append(f'data: {json.dumps(payload, default=str)}')
-    return '\n'.join(lines) + '\n\n'

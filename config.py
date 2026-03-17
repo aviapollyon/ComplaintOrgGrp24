@@ -47,6 +47,14 @@ class Config:
     )
     # Flask-Mail: suppress in development when explicitly set
     MAIL_SUPPRESS_SEND = os.environ.get('MAIL_SUPPRESS_SEND', 'false').lower() == 'true'
+    MAIL_CONNECT_TIMEOUT_SECONDS = int(os.environ.get('MAIL_CONNECT_TIMEOUT_SECONDS', 3))
+
+    # Realtime is enabled by default; set REALTIME_ENABLED=false to disable explicitly.
+    REALTIME_ENABLED = os.environ.get('REALTIME_ENABLED', 'true').lower() == 'true'
+    POLL_INTERVAL_SECONDS = int(os.environ.get('POLL_INTERVAL_SECONDS', 10))
+    POLL_TIMEOUT_SECONDS = int(os.environ.get('POLL_TIMEOUT_SECONDS', 8))
+    POLL_MAX_BACKOFF_SECONDS = int(os.environ.get('POLL_MAX_BACKOFF_SECONDS', 30))
+    POLL_BATCH_LIMIT = int(os.environ.get('POLL_BATCH_LIMIT', 20))
 
     # Password reset
     RESET_TOKEN_TTL_SECONDS = int(os.environ.get('RESET_TOKEN_TTL_SECONDS', 3600))

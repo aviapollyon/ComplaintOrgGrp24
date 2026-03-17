@@ -8,9 +8,12 @@
     <h4 class="mb-1 fw-bold"><i class="bi bi-bell-fill me-2 text-warning"></i>New Tickets</h4>
     <p class="text-muted mb-0 small">Tickets remain flagged as new until you set a priority.</p>
   </div>
-  <a href="{{ url_for('staff.dashboard') }}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
-  </a>
+  <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
+    <a class="btn {{ 'btn-primary' if view_mode == 'list' else 'btn-outline-primary' }}"
+       href="{{ url_for('staff.new_tickets', per_page=request.args.get('per_page', 15), view='list') }}">List</a>
+    <a class="btn {{ 'btn-primary' if view_mode == 'compact' else 'btn-outline-primary' }}"
+       href="{{ url_for('staff.new_tickets', per_page=request.args.get('per_page', 15), view='compact') }}">Compact</a>
+  </div>
 </div>
 
 <div class="row g-3 mb-4">
@@ -33,6 +36,7 @@
 </div>
 
 {% if tickets %}
+{% if view_mode == 'list' %}
 <div class="card border-0 shadow-sm">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
@@ -49,11 +53,17 @@
       </thead>
       <tbody>
         {% for t in tickets %}
-        <tr>
+        <tr class="{% if t.is_resolution_sla_overdue %}sla-row-resolution{% elif t.is_response_sla_overdue %}sla-row-response{% endif %}">
           <td class="text-muted small">#{{ t.TicketId }}</td>
           <td>
             <a href="{{ url_for('staff.view_ticket', ticket_id=t.TicketId) }}" class="text-decoration-none fw-semibold">{{ t.Title }}</a>
             <div class="small text-muted">{{ t.student.FullName if t.student else 'Student' }}</div>
+            {% if t.is_response_sla_overdue %}
+              <span class="badge sla-tag-response mt-1">First Response SLA (24h)</span>
+            {% endif %}
+            {% if t.is_resolution_sla_overdue %}
+              <span class="badge sla-tag-resolution mt-1">Resolution SLA (48h)</span>
+            {% endif %}
           </td>
           <td>
             <span class="badge bg-secondary">{{ t.Category }}</span>
@@ -73,6 +83,37 @@
     </table>
   </div>
 </div>
+{% else %}
+<div class="row g-3">
+  {% for t in tickets %}
+  <div class="col-12 col-lg-6">
+    <article class="card border-0 shadow-sm h-100 {% if t.is_resolution_sla_overdue %}sla-card-resolution{% elif t.is_response_sla_overdue %}sla-card-response{% endif %}">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <a href="{{ url_for('staff.view_ticket', ticket_id=t.TicketId) }}" class="text-decoration-none fw-semibold">{{ t.Title }}</a>
+            <div class="small text-muted">#{{ t.TicketId }} • {{ t.CreatedAt.strftime('%d %b %Y %H:%M') }}</div>
+          </div>
+          <span class="badge bg-light text-dark border">{{ t.Status.value }}</span>
+        </div>
+        <div class="mb-2">
+          <span class="badge bg-secondary">{{ t.Category }}</span>
+          {% if t.SubCategory %}<span class="badge bg-light text-dark border">{{ t.SubCategory }}</span>{% endif %}
+        </div>
+        <div class="small mb-2">
+          <span class="badge bg-info text-dark">Suggested: {{ suggested_priorities.get(t.TicketId, 'Low') }}</span>
+          {% if t.is_response_sla_overdue %}<span class="badge sla-tag-response">First Response SLA (24h)</span>{% endif %}
+          {% if t.is_resolution_sla_overdue %}<span class="badge sla-tag-resolution">Resolution SLA (48h)</span>{% endif %}
+        </div>
+      </div>
+      <div class="card-footer bg-transparent">
+        <a href="{{ url_for('staff.view_ticket', ticket_id=t.TicketId) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil-square me-1"></i>Set Priority</a>
+      </div>
+    </article>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 {% else %}
 <div class="text-center py-5 text-muted">
   <i class="bi bi-check-circle display-4 d-block mb-2"></i>

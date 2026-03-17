@@ -16,7 +16,7 @@ from app.models.user              import User, RoleEnum
 from app.models.ticket_comment    import TicketComment
 from app.models.ticket_flag       import TicketFlag, FlaggedTicket
 from app.utils.decorators         import role_required
-from app.utils.helpers            import CATEGORY_KEYWORDS
+from app.utils.helpers            import CATEGORY_KEYWORDS, CATEGORY_SUBCATEGORY_MAP
 from app.services.notifications   import (
     notify_status_update, notify_staff_reply,
     notify_ticket_resolved, notify_ticket_rejected,
@@ -31,6 +31,11 @@ from app.forms.staff_forms import (
 )
 
 staff_bp = Blueprint('staff', __name__)
+
+
+def _resolve_view_mode(default='list'):
+    mode = request.args.get('view', default, type=str).strip().lower()
+    return mode if mode in ('list', 'compact') else default
 
 
 def _publish_ticket_activity(ticket: Ticket, action: str, actor_id: int, extra: dict = None):
@@ -195,12 +200,14 @@ def recurring_issue_tickets(flag_id):
         .order_by(Ticket.CreatedAt.desc())
     )
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    view_mode = _resolve_view_mode('list')
 
     return render_template(
         'staff/flagged_tickets.html',
         flag=flag,
         tickets=pagination.items,
         pagination=pagination,
+        view_mode=view_mode,
     )
 
 
@@ -248,7 +255,18 @@ def dismiss_flag(flag_id):
 def dashboard():
     from app.utils.sorting import apply_sort
     filter_form  = StaffTicketFilterForm(request.args)
+    view_mode = _resolve_view_mode('list')
     query        = Ticket.query.filter_by(StaffId=current_user.UserId)
+    selected_categories = [
+        c for c in request.args.getlist('category')
+        if c in CATEGORY_SUBCATEGORY_MAP
+    ]
+    if not selected_categories and filter_form.category.data:
+        selected_categories = [filter_form.category.data]
+
+    selected_subcategories = [s for s in request.args.getlist('sub_category') if s]
+    if not selected_subcategories and filter_form.sub_category.data:
+        selected_subcategories = [filter_form.sub_category.data]
 
     if filter_form.status.data:
         try:
@@ -260,10 +278,10 @@ def dashboard():
             query = query.filter(Ticket.Priority == PriorityEnum(filter_form.priority.data))
         except ValueError:
             pass
-    if filter_form.category.data:
-        query = query.filter(Ticket.Category == filter_form.category.data)
-    if filter_form.sub_category.data:
-        query = query.filter(Ticket.SubCategory == filter_form.sub_category.data)
+    if selected_categories:
+        query = query.filter(Ticket.Category.in_(selected_categories))
+    if selected_subcategories:
+        query = query.filter(Ticket.SubCategory.in_(selected_subcategories))
     if filter_form.search.data:
         s = filter_form.search.data.strip()
         from app import db as _db
@@ -364,11 +382,27 @@ def dashboard():
         'new_tickets': len(new_ticket_ids),
     }
 
+    category_options = list(CATEGORY_SUBCATEGORY_MAP.keys())
+    if selected_categories:
+        available_subcategories = sorted({
+            s for c in selected_categories for s in CATEGORY_SUBCATEGORY_MAP.get(c, [])
+        })
+    else:
+        available_subcategories = sorted({
+            s for subs in CATEGORY_SUBCATEGORY_MAP.values() for s in subs
+        })
+
     return render_template(
         'staff/dashboard.html',
         tickets=tickets,
         pagination=pagination,
         filter_form=filter_form,
+        view_mode=view_mode,
+        category_options=category_options,
+        available_subcategories=available_subcategories,
+        selected_categories=selected_categories,
+        selected_subcategories=selected_subcategories,
+        subcategory_map=CATEGORY_SUBCATEGORY_MAP,
         stats=stats,
         flagged_ticket_ids=flagged_ids,
         active_flags=active_flags,
@@ -395,6 +429,7 @@ def new_tickets():
     )
     pagination = query.paginate(page=page, per_page=per_page, error_out=False)
     tickets = pagination.items
+    view_mode = _resolve_view_mode('list')
 
     suggested_priorities = {t.TicketId: _suggest_priority(t) for t in tickets}
 
@@ -402,6 +437,7 @@ def new_tickets():
         'staff/new_tickets.html',
         tickets=tickets,
         pagination=pagination,
+        view_mode=view_mode,
         suggested_priorities=suggested_priorities,
     )
 

@@ -1,12 +1,10 @@
-import time
-
-from flask import Blueprint, render_template, redirect, url_for, request, jsonify, Response, stream_with_context
+from flask import Blueprint, render_template, redirect, url_for, request, jsonify, current_app
 from flask_login import login_required, current_user
 from app import db
 from app.models.user_notification import UserNotification
 from app.models.admin_notification import AdminNotification
 from app.models.user import RoleEnum
-from app.services.realtime import wait_for_events, sse_frame
+from app.services.realtime import wait_for_events
 
 notif_bp = Blueprint('notif', __name__)
 
@@ -74,73 +72,91 @@ def mark_read(notif_id):
 
 
 @notif_bp.route('/notifications/stream')
+@notif_bp.route('/notifications/poll')
 @login_required
-def stream_notifications():
+def poll_notifications():
+    if not current_app.config.get('REALTIME_ENABLED', True):
+        return jsonify({'enabled': False, 'feature': 'polling_disabled'}), 200
+
     uid = current_user.UserId
     role = current_user.Role
+    batch_limit = max(1, min(int(current_app.config.get('POLL_BATCH_LIMIT', 20)), 100))
+
     last_user_arg = request.args.get('last_user_notif_id')
     last_admin_arg = request.args.get('last_admin_notif_id')
 
-    if last_user_arg is None:
-        last_user_id = db.session.query(db.func.max(UserNotification.NotificationId)).filter(
-            UserNotification.UserId == uid
-        ).scalar() or 0
-    else:
-        last_user_id = int(last_user_arg)
-
-    if role == RoleEnum.Admin:
-        if last_admin_arg is None:
-            last_admin_id = db.session.query(db.func.max(AdminNotification.NotificationId)).scalar() or 0
+    try:
+        if last_user_arg is None:
+            last_user_id = db.session.query(db.func.max(UserNotification.NotificationId)).filter(
+                UserNotification.UserId == uid
+            ).scalar() or 0
         else:
-            last_admin_id = int(last_admin_arg)
-    else:
-        last_admin_id = 0
+            last_user_id = max(0, int(last_user_arg))
 
-    @stream_with_context
-    def generate():
-        nonlocal last_user_id, last_admin_id
-        sequence = 0
-        last_db_poll = 0.0
+        if role == RoleEnum.Admin:
+            if last_admin_arg is None:
+                last_admin_id = db.session.query(db.func.max(AdminNotification.NotificationId)).scalar() or 0
+            else:
+                last_admin_id = max(0, int(last_admin_arg))
+        else:
+            last_admin_id = 0
+    except (TypeError, ValueError):
+        return jsonify({'error': 'invalid_cursor_parameters'}), 400
 
-        while True:
-            pushed = wait_for_events(uid, timeout_seconds=15)
-            for event in pushed:
-                sequence += 1
-                yield sse_frame(event.get('type', 'notification'), event.get('payload', {}), str(sequence))
+    try:
+        fresh_user = (UserNotification.query
+                      .filter(UserNotification.UserId == uid,
+                              UserNotification.NotificationId > last_user_id)
+                      .order_by(UserNotification.NotificationId.asc())
+                      .limit(batch_limit)
+                      .all())
+        for n in fresh_user:
+            last_user_id = max(last_user_id, n.NotificationId)
 
-            now = time.monotonic()
-            should_poll_db = (not pushed) and ((now - last_db_poll) >= 10)
-            if should_poll_db:
-                fresh_user = (UserNotification.query
-                              .filter(UserNotification.UserId == uid,
-                                      UserNotification.NotificationId > last_user_id)
-                              .order_by(UserNotification.NotificationId.asc())
-                              .limit(20)
-                              .all())
-                for n in fresh_user:
-                    last_user_id = max(last_user_id, n.NotificationId)
-                    sequence += 1
-                    yield sse_frame('notification', _serialize_user_notification(n), str(sequence))
+        fresh_admin = []
+        if role == RoleEnum.Admin:
+            fresh_admin = (AdminNotification.query
+                           .filter(AdminNotification.NotificationId > last_admin_id)
+                           .order_by(AdminNotification.NotificationId.asc())
+                           .limit(batch_limit)
+                           .all())
+            for n in fresh_admin:
+                last_admin_id = max(last_admin_id, n.NotificationId)
 
-                if role == RoleEnum.Admin:
-                    fresh_admin = (AdminNotification.query
-                                   .filter(AdminNotification.NotificationId > last_admin_id)
-                                   .order_by(AdminNotification.NotificationId.asc())
-                                   .limit(20)
-                                   .all())
-                    for n in fresh_admin:
-                        last_admin_id = max(last_admin_id, n.NotificationId)
-                        sequence += 1
-                        yield sse_frame('admin_notification', _serialize_admin_notification(n), str(sequence))
+        raw_events = wait_for_events(uid, timeout_seconds=0)
+        activity_events = [
+            event.get('payload', {})
+            for event in raw_events
+            if event.get('type') == 'ticket_activity'
+        ]
 
-                last_db_poll = now
+        user_unread_count = UserNotification.query.filter_by(UserId=uid, IsRead=False).count()
+        admin_unread_count = (
+            AdminNotification.query.filter_by(IsRead=False).count()
+            if role == RoleEnum.Admin
+            else 0
+        )
 
-            sequence += 1
-            yield sse_frame('heartbeat', {'ts': int(time.time())}, str(sequence))
-
-    headers = {
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'X-Accel-Buffering': 'no',
-    }
-    return Response(generate(), mimetype='text/event-stream', headers=headers)
+        return jsonify({
+            'enabled': True,
+            'user_notifications': [_serialize_user_notification(n) for n in fresh_user],
+            'admin_notifications': [_serialize_admin_notification(n) for n in fresh_admin],
+            'activity_events': activity_events,
+            'next_last_user_notif_id': last_user_id,
+            'next_last_admin_notif_id': last_admin_id,
+            'user_unread_count': user_unread_count,
+            'admin_unread_count': admin_unread_count,
+        })
+    except Exception as exc:  # noqa: BLE001
+        current_app.logger.error('Notification polling failed for user_id=%s: %s', uid, exc, exc_info=True)
+        return jsonify({
+            'enabled': True,
+            'user_notifications': [],
+            'admin_notifications': [],
+            'activity_events': [],
+            'next_last_user_notif_id': last_user_id,
+            'next_last_admin_notif_id': last_admin_id,
+            'user_unread_count': None,
+            'admin_unread_count': None,
+            'error': 'poll_failed',
+        }), 200

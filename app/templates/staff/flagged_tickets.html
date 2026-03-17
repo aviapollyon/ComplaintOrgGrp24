@@ -17,12 +17,16 @@
       {% endif %}
     </p>
   </div>
-  <a href="{{ url_for('staff.recurring_issues') }}" class="btn btn-outline-secondary btn-sm">
-    <i class="bi bi-arrow-left me-1"></i>Back to Recurring Issues
-  </a>
+  <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
+    <a class="btn {{ 'btn-primary' if view_mode == 'list' else 'btn-outline-primary' }}"
+       href="{{ url_for('staff.recurring_issue_tickets', flag_id=flag.FlagId, per_page=request.args.get('per_page', 15), view='list') }}">List</a>
+    <a class="btn {{ 'btn-primary' if view_mode == 'compact' else 'btn-outline-primary' }}"
+       href="{{ url_for('staff.recurring_issue_tickets', flag_id=flag.FlagId, per_page=request.args.get('per_page', 15), view='compact') }}">Compact</a>
+  </div>
 </div>
 
 {% if tickets %}
+{% if view_mode == 'list' %}
 <div class="card border-0 shadow-sm">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0">
@@ -40,9 +44,13 @@
       </thead>
       <tbody>
         {% for t in tickets %}
-        <tr>
+        <tr class="{% if t.is_resolution_sla_overdue %}sla-row-resolution{% elif t.is_response_sla_overdue %}sla-row-response{% endif %}">
           <td class="text-muted small">#{{ t.TicketId }}</td>
-          <td class="fw-semibold">{{ t.Title }}</td>
+          <td class="fw-semibold">
+            {{ t.Title }}
+            {% if t.is_response_sla_overdue %}<span class="badge sla-tag-response ms-1">First Response SLA (24h)</span>{% endif %}
+            {% if t.is_resolution_sla_overdue %}<span class="badge sla-tag-resolution ms-1">Resolution SLA (48h)</span>{% endif %}
+          </td>
           <td class="small text-muted">{{ t.TrackingRef or '-' }}</td>
           <td>{{ t.student.FullName if t.student else '-' }}</td>
           <td>{{ status_badge(t.Status.value) }}</td>
@@ -64,6 +72,39 @@
     </table>
   </div>
 </div>
+{% else %}
+<div class="row g-3">
+  {% for t in tickets %}
+  <div class="col-12 col-lg-6">
+    <article class="card border-0 shadow-sm h-100 {% if t.is_resolution_sla_overdue %}sla-card-resolution{% elif t.is_response_sla_overdue %}sla-card-response{% endif %}">
+      <div class="card-body">
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <div>
+            <a href="{{ url_for('staff.view_ticket', ticket_id=t.TicketId) }}" class="text-decoration-none fw-semibold">{{ t.Title }}</a>
+            <div class="small text-muted">#{{ t.TicketId }} • {{ t.CreatedAt.strftime('%d %b %Y') }}</div>
+          </div>
+          {{ status_badge(t.Status.value) }}
+        </div>
+        <div class="small mb-2 text-muted">{{ t.student.FullName if t.student else '-' }} • {{ t.TrackingRef or '-' }}</div>
+        <div class="mb-2">
+          {% if not t.Priority %}<span class="badge bg-secondary">Not Set</span>
+          {% elif t.Priority.value == 'High' %}<span class="badge bg-danger">High</span>
+          {% elif t.Priority.value == 'Medium' %}<span class="badge bg-warning text-dark">Medium</span>
+          {% else %}<span class="badge bg-success">Low</span>{% endif %}
+        </div>
+        <div class="small">
+          {% if t.is_response_sla_overdue %}<span class="badge sla-tag-response">First Response SLA (24h)</span>{% endif %}
+          {% if t.is_resolution_sla_overdue %}<span class="badge sla-tag-resolution">Resolution SLA (48h)</span>{% endif %}
+        </div>
+      </div>
+      <div class="card-footer bg-transparent">
+        <a href="{{ url_for('staff.view_ticket', ticket_id=t.TicketId) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye me-1"></i>Open</a>
+      </div>
+    </article>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 {% else %}
 <div class="card border-0 shadow-sm">
   <div class="card-body text-center text-muted py-5">

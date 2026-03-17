@@ -15,7 +15,7 @@ from app import create_app
 from app.services.sla_monitor import start_sla_monitor
 
 # Create the Flask app instance using  factory
-app = create_app()
+app = create_app(os.environ.get('FLASK_CONFIG', 'development'))
 
 if __name__ == '__main__':
     start_sla_monitor(app)

@@ -1,6 +1,7 @@
 import logging
-import sys
+import socket
 import threading
+import time
 
 from flask import url_for
 
@@ -10,6 +11,13 @@ from app.models.user import User, RoleEnum
 from app.services.realtime import publish_user_event
 
 logger = logging.getLogger(__name__)
+
+_smtp_probe_lock = threading.Lock()
+_smtp_probe_state = {
+    'checked_at': 0.0,
+    'is_reachable': None,
+    'last_unreachable_warning_at': 0.0,
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -88,6 +96,63 @@ def _notification_exists(user_id: int, notif_type: str, ticket_id: int) -> bool:
     ).first() is not None
 
 
+def _smtp_reachable() -> bool:
+    from flask import current_app
+
+    if bool(current_app.config.get('MAIL_SUPPRESS_SEND', False)):
+        return True
+
+    host = (current_app.config.get('MAIL_SERVER') or '').strip()
+    port = int(current_app.config.get('MAIL_PORT', 587) or 587)
+    if not host:
+        return False
+
+    timeout = float(current_app.config.get('MAIL_CONNECT_TIMEOUT_SECONDS', 3))
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+
+def _smtp_reachable_cached() -> bool:
+    from flask import current_app
+
+    now = time.monotonic()
+    probe_interval = float(current_app.config.get('MAIL_REACHABILITY_CACHE_SECONDS', 60))
+    warning_cooldown = float(current_app.config.get('MAIL_UNREACHABLE_LOG_COOLDOWN_SECONDS', 300))
+
+    with _smtp_probe_lock:
+        cached = _smtp_probe_state['is_reachable']
+        checked_at = _smtp_probe_state['checked_at']
+        needs_probe = cached is None or (now - checked_at) >= probe_interval
+
+    if needs_probe:
+        is_reachable = _smtp_reachable()
+        with _smtp_probe_lock:
+            _smtp_probe_state['is_reachable'] = is_reachable
+            _smtp_probe_state['checked_at'] = now
+    else:
+        is_reachable = bool(cached)
+
+    if not is_reachable:
+        with _smtp_probe_lock:
+            last_warning_at = _smtp_probe_state['last_unreachable_warning_at']
+            should_warn = (now - last_warning_at) >= warning_cooldown
+            if should_warn:
+                _smtp_probe_state['last_unreachable_warning_at'] = now
+
+        if should_warn:
+            logger.warning(
+                '[EMAIL SKIPPED] SMTP host is unreachable (%s:%s). '
+                'Skipping outbound email until connectivity recovers.',
+                current_app.config.get('MAIL_SERVER'),
+                current_app.config.get('MAIL_PORT'),
+            )
+
+    return is_reachable
+
+
 def _send_email(recipient_email: str, subject: str, body: str):
     """
     Build a plain-text email and send it synchronously.
@@ -101,6 +166,9 @@ def _send_email(recipient_email: str, subject: str, body: str):
         from flask import current_app
         from flask_mail import Message
         from app import mail
+
+        if not _smtp_reachable_cached():
+            return
 
         mail_username = current_app.config.get('MAIL_USERNAME', '')
         if not mail_username:
@@ -140,7 +208,6 @@ def _send_email(recipient_email: str, subject: str, body: str):
             '[EMAIL ERROR] Failed to send to %s | Subject: %s | Error: %s',
             recipient_email, subject, exc, exc_info=True
         )
-        print(f'[EMAIL ERROR] {exc}', file=sys.stderr, flush=True)
 
 
 def _get_user_email(user_id: int) -> str:

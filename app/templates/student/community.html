@@ -10,207 +10,264 @@
   </a>
 </div>
 
-<div class="card border-0 shadow-sm mb-4 filter-card">
-  <div class="card-body">
-    <div class="d-flex justify-content-between align-items-center mb-3">
-      <div class="small text-muted fw-semibold">Community View</div>
-      <div class="btn-group btn-group-sm" role="group" aria-label="View mode">
-        <a class="btn {{ 'btn-primary' if view_mode == 'list' else 'btn-outline-primary' }}"
-           href="{{ url_for('student.community', search=filter_form.search.data, status=filter_form.status.data, priority=filter_form.priority.data, category=filter_form.category.data, sub_category=filter_form.sub_category.data, sort=filter_form.sort.data, per_page=filter_form.per_page.data, view='list') }}">
-          <i class="bi bi-list-ul me-1"></i>List
-        </a>
-        <a class="btn {{ 'btn-primary' if view_mode == 'compact' else 'btn-outline-primary' }}"
-           href="{{ url_for('student.community', search=filter_form.search.data, status=filter_form.status.data, priority=filter_form.priority.data, category=filter_form.category.data, sub_category=filter_form.sub_category.data, sort=filter_form.sort.data, per_page=filter_form.per_page.data, view='compact') }}">
-          <i class="bi bi-grid-3x3-gap me-1"></i>Compact
-        </a>
-      </div>
+<div class="row g-4 align-items-start">
+  <div class="col-12 col-xl-9 order-2 order-xl-1">
+    <div class="d-flex flex-wrap gap-2 mb-3">
+      <span class="badge rounded-pill text-bg-primary px-3 py-2">View {{ view_mode|capitalize }}</span>
+      <span class="badge rounded-pill text-bg-secondary px-3 py-2">Showing {{ tickets|length }}</span>
+      <span class="badge rounded-pill text-bg-light border text-dark px-3 py-2">Total {{ pagination.total }}</span>
     </div>
 
-    <form method="GET" class="row g-2 align-items-end">
-      <input type="hidden" name="view" value="{{ view_mode }}"/>
-      <div class="col-md-3">
-        <label class="form-label small fw-semibold">Search</label>
-        <input type="text" name="search" class="form-control form-control-sm"
-               placeholder="Title or reference..." value="{{ filter_form.search.data or '' }}"/>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Status</label>
-        <select name="status" class="form-select form-select-sm">
-          {% for value, label in filter_form.status.choices %}
-            <option value="{{ value }}" {% if filter_form.status.data == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Priority</label>
-        <select name="priority" class="form-select form-select-sm">
-          {% for value, label in filter_form.priority.choices %}
-            <option value="{{ value }}" {% if filter_form.priority.data == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Category</label>
-        <select name="category" class="form-select form-select-sm">
-          {% for value, label in filter_form.category.choices %}
-            <option value="{{ value }}" {% if filter_form.category.data == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Sub-Category</label>
-        <select name="sub_category" class="form-select form-select-sm">
-          {% for value, label in filter_form.sub_category.choices %}
-            <option value="{{ value }}" {% if filter_form.sub_category.data == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-2">
-        <label class="form-label small fw-semibold">Sort By</label>
-        <select name="sort" class="form-select form-select-sm">
-          {% for value, label in filter_form.sort.choices %}
-            <option value="{{ value }}" {% if filter_form.sort.data == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-1">
-        <label class="form-label small fw-semibold">Per Page</label>
-        <select name="per_page" class="form-select form-select-sm">
-          {% for value, label in filter_form.per_page.choices %}
-            <option value="{{ value }}" {% if (filter_form.per_page.data or '15') == value %}selected{% endif %}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </div>
-      <div class="col-md-1">
-        <button type="submit" class="btn btn-primary btn-sm w-100" style="margin-top:1.6rem;">
-          <i class="bi bi-funnel"></i>
-        </button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<div class="d-flex flex-wrap gap-2 mb-3">
-  <span class="badge rounded-pill text-bg-primary px-3 py-2">View {{ view_mode|capitalize }}</span>
-  <span class="badge rounded-pill text-bg-secondary px-3 py-2">Showing {{ tickets|length }}</span>
-  <span class="badge rounded-pill text-bg-light border text-dark px-3 py-2">Total {{ pagination.total }}</span>
-</div>
-
-{% if view_mode == 'list' %}
-<div class="card border-0 shadow-sm">
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
-      <thead class="table-light">
-        <tr>
-          <th>#</th>
-          <th>Title</th>
-          <th>Category</th>
-          <th>Priority</th>
-          <th>Community</th>
-          <th>Status</th>
-          <th>Submitted</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for ticket in tickets %}
-        <tr>
-          <td class="text-muted small">#{{ ticket.TicketId }}</td>
-          <td>
-            <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}" class="text-decoration-none fw-semibold">{{ ticket.Title }}</a>
-            <div class="small text-muted">{{ ticket.student.FullName if ticket.student else 'Student' }}</div>
-          </td>
-          <td>
-            <span class="badge bg-secondary">{{ ticket.Category }}</span>
-            {% if ticket.SubCategory %}<span class="badge bg-light text-dark border">{{ ticket.SubCategory }}</span>{% endif %}
-          </td>
-          <td>
-            {% if not ticket.Priority %}
-              <span class="badge bg-secondary">Not Set</span>
-            {% elif ticket.Priority.value == 'High' %}
-              <span class="badge bg-danger">High</span>
-            {% elif ticket.Priority.value == 'Medium' %}
-              <span class="badge bg-warning text-dark">Medium</span>
+    {% if view_mode == 'list' %}
+    <div class="card border-0 shadow-sm">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>#</th>
+              <th>Title</th>
+              <th>Category</th>
+              <th>Priority</th>
+              <th>Community</th>
+              <th>Status</th>
+              <th>Submitted</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ticket in tickets %}
+            <tr>
+              <td class="text-muted small">#{{ ticket.TicketId }}</td>
+              <td>
+                <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}" class="text-decoration-none fw-semibold">{{ ticket.Title }}</a>
+                <div class="small text-muted">{{ ticket.student.FullName if ticket.student else 'Student' }}</div>
+              </td>
+              <td>
+                <span class="badge bg-secondary">{{ ticket.Category }}</span>
+                {% if ticket.SubCategory %}<span class="badge bg-light text-dark border">{{ ticket.SubCategory }}</span>{% endif %}
+              </td>
+              <td>
+                {% if not ticket.Priority %}
+                  <span class="badge bg-secondary">Not Set</span>
+                {% elif ticket.Priority.value == 'High' %}
+                  <span class="badge bg-danger">High</span>
+                {% elif ticket.Priority.value == 'Medium' %}
+                  <span class="badge bg-warning text-dark">Medium</span>
+                {% else %}
+                  <span class="badge bg-success">Low</span>
+                {% endif %}
+              </td>
+              <td class="small">
+                <form method="POST" action="{{ url_for('student.vote_ticket', ticket_id=ticket.TicketId) }}" class="d-inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                  <button type="submit" class="btn btn-sm {{ 'btn-primary' if ticket.TicketId in my_ticket_votes else 'btn-outline-primary' }}">
+                    <i class="bi bi-hand-thumbs-up"></i> {{ ticket.vote_count }}
+                  </button>
+                </form>
+                <span class="ms-2"><i class="bi bi-chat-dots"></i> {{ ticket.comment_count }}</span>
+              </td>
+              <td><span class="badge bg-light text-dark border">{{ ticket.Status.value }}</span></td>
+              <td class="small text-muted">{{ ticket.CreatedAt.strftime('%d %b %Y') }}</td>
+              <td>
+                <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}" class="btn btn-sm btn-outline-primary">
+                  <i class="bi bi-eye me-1"></i>View Ticket
+                </a>
+              </td>
+            </tr>
             {% else %}
-              <span class="badge bg-success">Low</span>
-            {% endif %}
-          </td>
-          <td class="small">
-            <form method="POST" action="{{ url_for('student.vote_ticket', ticket_id=ticket.TicketId) }}" class="d-inline">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-              <button type="submit" class="btn btn-sm {{ 'btn-primary' if ticket.TicketId in my_ticket_votes else 'btn-outline-primary' }}">
-                <i class="bi bi-hand-thumbs-up"></i> {{ ticket.vote_count }}
-              </button>
-            </form>
-            <span class="ms-2"><i class="bi bi-chat-dots"></i> {{ ticket.comment_count }}</span>
-          </td>
-          <td><span class="badge bg-light text-dark border">{{ ticket.Status.value }}</span></td>
-          <td class="small text-muted">{{ ticket.CreatedAt.strftime('%d %b %Y') }}</td>
-          <td>
+            <tr><td colspan="8" class="text-center text-muted py-4">No community complaints found.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% else %}
+    <div class="row g-3">
+      {% for ticket in tickets %}
+      <div class="col-12 col-md-6">
+        <article class="card border-0 shadow-sm h-100">
+          <div class="card-body">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+              <div>
+                <div class="fw-semibold">{{ ticket.student.FullName if ticket.student else 'Student' }}</div>
+                <div class="small text-muted">{{ ticket.CreatedAt.strftime('%d %b %Y %H:%M') }}</div>
+              </div>
+              <span class="badge bg-secondary">{{ ticket.Category }}</span>
+            </div>
+
+            <h6 class="mb-2">{{ ticket.Title }}</h6>
+            <p class="small text-muted mb-3">{{ ticket.Description[:220] }}{% if ticket.Description|length > 220 %}...{% endif %}</p>
+
+            <div class="d-flex align-items-center gap-3 small mb-2">
+              <form method="POST" action="{{ url_for('student.vote_ticket', ticket_id=ticket.TicketId) }}" class="d-inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <button type="submit" class="btn btn-sm {{ 'btn-primary' if ticket.TicketId in my_ticket_votes else 'btn-outline-primary' }}">
+                  <i class="bi bi-hand-thumbs-up"></i> {{ ticket.vote_count }}
+                </button>
+              </form>
+              <span><i class="bi bi-chat-dots"></i> {{ ticket.comment_count }}</span>
+              <span class="ms-auto">
+                {% if not ticket.Priority %}<span class="badge bg-secondary">Not Set</span>
+                {% elif ticket.Priority.value == 'High' %}<span class="badge bg-danger">High</span>
+                {% elif ticket.Priority.value == 'Medium' %}<span class="badge bg-warning text-dark">Medium</span>
+                {% else %}<span class="badge bg-success">Low</span>{% endif %}
+              </span>
+            </div>
+
             <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}" class="btn btn-sm btn-outline-primary">
               <i class="bi bi-eye me-1"></i>View Ticket
             </a>
-          </td>
-        </tr>
-        {% else %}
-        <tr><td colspan="8" class="text-center text-muted py-4">No community complaints found.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% else %}
-<div class="row g-3">
-  {% for ticket in tickets %}
-  <div class="col-12 col-md-6">
-    <article class="card border-0 shadow-sm h-100">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-          <div>
-            <div class="fw-semibold">{{ ticket.student.FullName if ticket.student else 'Student' }}</div>
-            <div class="small text-muted">{{ ticket.CreatedAt.strftime('%d %b %Y %H:%M') }}</div>
           </div>
-          <span class="badge bg-secondary">{{ ticket.Category }}</span>
-        </div>
-
-        <h6 class="mb-2">{{ ticket.Title }}</h6>
-        <p class="small text-muted mb-3">{{ ticket.Description[:220] }}{% if ticket.Description|length > 220 %}...{% endif %}</p>
-
-        <div class="d-flex align-items-center gap-3 small mb-2">
-          <form method="POST" action="{{ url_for('student.vote_ticket', ticket_id=ticket.TicketId) }}" class="d-inline">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
-            <button type="submit" class="btn btn-sm {{ 'btn-primary' if ticket.TicketId in my_ticket_votes else 'btn-outline-primary' }}">
-              <i class="bi bi-hand-thumbs-up"></i> {{ ticket.vote_count }}
-            </button>
-          </form>
-          <span><i class="bi bi-chat-dots"></i> {{ ticket.comment_count }}</span>
-          <span class="ms-auto">
-            {% if not ticket.Priority %}<span class="badge bg-secondary">Not Set</span>
-            {% elif ticket.Priority.value == 'High' %}<span class="badge bg-danger">High</span>
-            {% elif ticket.Priority.value == 'Medium' %}<span class="badge bg-warning text-dark">Medium</span>
-            {% else %}<span class="badge bg-success">Low</span>{% endif %}
-          </span>
-        </div>
-
-        <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}"
-           class="btn btn-sm btn-outline-primary">
-          <i class="bi bi-eye me-1"></i>View Ticket
-        </a>
+        </article>
       </div>
-    </article>
-  </div>
-  {% else %}
-  <div class="col-12">
-    <div class="card border-0 shadow-sm">
-      <div class="card-body text-center text-muted py-5">
-        <i class="bi bi-inbox display-5 d-block mb-2"></i>
-        No community complaints are available yet.
+      {% else %}
+      <div class="col-12">
+        <div class="card border-0 shadow-sm">
+          <div class="card-body text-center text-muted py-5">
+            <i class="bi bi-inbox display-5 d-block mb-2"></i>
+            No community complaints are available yet.
+          </div>
+        </div>
       </div>
+      {% endfor %}
     </div>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
+    {% endif %}
 
-{{ render_pagination(pagination) }}
+    {{ render_pagination(pagination) }}
+  </div>
+
+  <div class="col-12 col-xl-3 order-1 order-xl-2">
+    <aside class="card border-0 shadow-sm filter-card sticky-filter-panel">
+      <div class="card-header bg-transparent d-flex justify-content-between align-items-center">
+        <span class="small fw-semibold text-muted">Community Filters</span>
+        <button class="btn btn-sm btn-outline-secondary" type="button" data-bs-toggle="collapse" data-bs-target="#studentCommunityFilters" aria-expanded="true" aria-controls="studentCommunityFilters" data-collapse-arrow-target="#studentCommunityFilters">
+          Filters <span class="collapse-arrow-text">↓</span>
+        </button>
+      </div>
+      <div class="collapse show" id="studentCommunityFilters">
+        <div class="card-body">
+          <form method="GET" class="d-grid gap-2">
+            <div class="btn-group btn-group-sm w-100 mb-1" role="group" aria-label="View mode">
+              <button type="submit" name="view" value="list" class="btn {{ 'btn-primary' if view_mode == 'list' else 'btn-outline-primary' }}">List</button>
+              <button type="submit" name="view" value="compact" class="btn {{ 'btn-primary' if view_mode == 'compact' else 'btn-outline-primary' }}">Compact</button>
+            </div>
+
+            <label class="form-label small fw-semibold mb-0">Search</label>
+            <input type="text" name="search" class="form-control form-control-sm" placeholder="Title or reference..." value="{{ filter_form.search.data or '' }}"/>
+
+            <label class="form-label small fw-semibold mb-0 mt-1">Status</label>
+            <select name="status" class="form-select form-select-sm">
+              {% for value, label in filter_form.status.choices %}
+                <option value="{{ value }}" {% if filter_form.status.data == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+
+            <label class="form-label small fw-semibold mb-0 mt-1">Priority</label>
+            <select name="priority" class="form-select form-select-sm">
+              {% for value, label in filter_form.priority.choices %}
+                <option value="{{ value }}" {% if filter_form.priority.data == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+
+            <label class="form-label small fw-semibold mb-0 mt-1">Category</label>
+            <select id="studentCommunityCategorySelect" name="category" class="form-select form-select-sm" multiple size="5">
+              {% for category in category_options %}
+              <option value="{{ category }}" {% if category in selected_categories %}selected{% endif %}>{{ category }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text mt-0">Hint: Hold Ctrl (Windows) or Cmd (Mac) to select multiple categories.</div>
+
+            <label class="form-label small fw-semibold mb-0 mt-1">Sub-Category</label>
+            <select id="studentCommunitySubCategorySelect" name="sub_category" class="form-select form-select-sm" multiple size="6">
+              {% for sub in available_subcategories %}
+              <option value="{{ sub }}" {% if sub in selected_subcategories %}selected{% endif %}>{{ sub }}</option>
+              {% endfor %}
+            </select>
+            <div class="form-text mt-0">Sub-categories update based on selected categories.</div>
+
+            <label class="form-label small fw-semibold mb-0 mt-1">Sort By</label>
+            <select name="sort" class="form-select form-select-sm">
+              {% for value, label in filter_form.sort.choices %}
+                <option value="{{ value }}" {% if filter_form.sort.data == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+
+            <label class="form-label small fw-semibold mb-0 mt-1">Per Page</label>
+            <select name="per_page" class="form-select form-select-sm">
+              {% for value, label in filter_form.per_page.choices %}
+                <option value="{{ value }}" {% if (filter_form.per_page.data or '15') == value %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+
+            <button type="submit" class="btn btn-primary btn-sm mt-1">
+              <i class="bi bi-funnel me-1"></i>Apply Filters
+            </button>
+            <a href="{{ url_for('student.community', view=view_mode) }}" class="btn btn-outline-secondary btn-sm">
+              Reset
+            </a>
+          </form>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+{{ super() }}
+<script>
+  (function() {
+    var categorySelect = document.getElementById('studentCommunityCategorySelect');
+    var subCategorySelect = document.getElementById('studentCommunitySubCategorySelect');
+    if (!categorySelect || !subCategorySelect) {
+      return;
+    }
+
+    var subcategoryMap = {{ subcategory_map|tojson }};
+
+    function selectedValues(selectEl) {
+      return Array.from(selectEl.selectedOptions).map(function(option) {
+        return option.value;
+      });
+    }
+
+    function rebuildSubcategories() {
+      var selectedCategories = selectedValues(categorySelect);
+      var keepSelected = new Set(selectedValues(subCategorySelect));
+      var options = [];
+
+      if (selectedCategories.length) {
+        selectedCategories.forEach(function(category) {
+          (subcategoryMap[category] || []).forEach(function(sub) {
+            if (options.indexOf(sub) === -1) {
+              options.push(sub);
+            }
+          });
+        });
+      } else {
+        Object.keys(subcategoryMap).forEach(function(category) {
+          (subcategoryMap[category] || []).forEach(function(sub) {
+            if (options.indexOf(sub) === -1) {
+              options.push(sub);
+            }
+          });
+        });
+      }
+
+      options.sort();
+      subCategorySelect.innerHTML = '';
+      options.forEach(function(sub) {
+        var opt = document.createElement('option');
+        opt.value = sub;
+        opt.textContent = sub;
+        if (keepSelected.has(sub)) {
+          opt.selected = true;
+        }
+        subCategorySelect.appendChild(opt);
+      });
+    }
+
+    categorySelect.addEventListener('change', rebuildSubcategories);
+  })();
+</script>
 {% endblock %}

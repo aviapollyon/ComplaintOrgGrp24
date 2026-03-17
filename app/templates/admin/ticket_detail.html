@@ -196,9 +196,9 @@
             <div class="flex-grow-1">
               <div class="{{ 'bg-primary bg-opacity-10 border border-primary' if is_staff else 'bg-light border' }} rounded p-2">
                 <div class="d-flex justify-content-between mb-1">
-                  <span class="fw-semibold small {{ 'text-primary' if is_staff else '' }}">
+                  <span class="fw-semibold small {{ 'activity-staff-author-name' if is_staff else '' }}">
                     {{ update.author.FullName }}
-                    <span class="badge {{ 'bg-primary' if is_staff else 'bg-secondary' }} ms-1"
+                      <span class="badge comment-role-tag {{ 'bg-primary' if is_staff else 'bg-secondary' }} ms-1"
                           style="font-size:0.65rem;">{{ update.author.Role.value }}</span>
                   </span>
                   <span class="text-muted" style="font-size:0.72rem;">

@@ -74,9 +74,41 @@ def _resolve_view_mode(default='list'):
 @login_required
 @role_required('Student')
 def dashboard():
+    total_tickets = Ticket.query.filter_by(StudentId=current_user.UserId).count()
+    unresolved_tickets = (Ticket.query
+                          .filter_by(StudentId=current_user.UserId)
+                          .filter(Ticket.Status.in_([
+                              StatusEnum.Submitted,
+                              StatusEnum.Assigned,
+                              StatusEnum.InProgress,
+                              StatusEnum.PendingInfo,
+                          ]))
+                          .count())
+
+    return render_template(
+        'student/dashboard.html',
+        total_tickets=total_tickets,
+        unresolved_tickets=unresolved_tickets,
+    )
+
+
+@student_bp.route('/my-complaints')
+@login_required
+@role_required('Student')
+def my_complaints():
     filter_form = TicketFilterForm(request.args)
     view_mode = _resolve_view_mode('list')
     query       = Ticket.query.filter_by(StudentId=current_user.UserId)
+    selected_categories = [
+        c for c in request.args.getlist('category')
+        if c in CATEGORY_SUBCATEGORY_MAP
+    ]
+    if not selected_categories and filter_form.category.data:
+        selected_categories = [filter_form.category.data]
+
+    selected_subcategories = [s for s in request.args.getlist('sub_category') if s]
+    if not selected_subcategories and filter_form.sub_category.data:
+        selected_subcategories = [filter_form.sub_category.data]
 
     if filter_form.status.data:
         try:
@@ -88,10 +120,10 @@ def dashboard():
             query = query.filter(Ticket.Priority == PriorityEnum(filter_form.priority.data))
         except ValueError:
             pass
-    if filter_form.category.data:
-        query = query.filter(Ticket.Category == filter_form.category.data)
-    if filter_form.sub_category.data:
-        query = query.filter(Ticket.SubCategory == filter_form.sub_category.data)
+    if selected_categories:
+        query = query.filter(Ticket.Category.in_(selected_categories))
+    if selected_subcategories:
+        query = query.filter(Ticket.SubCategory.in_(selected_subcategories))
     if filter_form.search.data:
         s = filter_form.search.data.strip()
         query = query.filter(
@@ -122,13 +154,28 @@ def dashboard():
         'needs_feedback': sum(1 for t in all_tickets if t.needs_feedback),
     }
 
+    category_options = list(CATEGORY_SUBCATEGORY_MAP.keys())
+    if selected_categories:
+        available_subcategories = sorted({
+            s for c in selected_categories for s in CATEGORY_SUBCATEGORY_MAP.get(c, [])
+        })
+    else:
+        available_subcategories = sorted({
+            s for subs in CATEGORY_SUBCATEGORY_MAP.values() for s in subs
+        })
+
     return render_template(
-        'student/dashboard.html',
+        'student/my_complaints.html',
         tickets=tickets,
         pagination=pagination,
         filter_form=filter_form,
         stats=stats,
         view_mode=view_mode,
+        category_options=category_options,
+        available_subcategories=available_subcategories,
+        selected_categories=selected_categories,
+        selected_subcategories=selected_subcategories,
+        subcategory_map=CATEGORY_SUBCATEGORY_MAP,
     )
 
 
@@ -139,6 +186,16 @@ def community():
     filter_form = TicketFilterForm(request.args)
     view_mode = _resolve_view_mode('compact')
     community_query = Ticket.query.filter(Ticket.StudentId != current_user.UserId)
+    selected_categories = [
+        c for c in request.args.getlist('category')
+        if c in CATEGORY_SUBCATEGORY_MAP
+    ]
+    if not selected_categories and filter_form.category.data:
+        selected_categories = [filter_form.category.data]
+
+    selected_subcategories = [s for s in request.args.getlist('sub_category') if s]
+    if not selected_subcategories and filter_form.sub_category.data:
+        selected_subcategories = [filter_form.sub_category.data]
 
     if filter_form.status.data:
         try:
@@ -154,10 +211,10 @@ def community():
             )
         except ValueError:
             pass
-    if filter_form.category.data:
-        community_query = community_query.filter(Ticket.Category == filter_form.category.data)
-    if filter_form.sub_category.data:
-        community_query = community_query.filter(Ticket.SubCategory == filter_form.sub_category.data)
+    if selected_categories:
+        community_query = community_query.filter(Ticket.Category.in_(selected_categories))
+    if selected_subcategories:
+        community_query = community_query.filter(Ticket.SubCategory.in_(selected_subcategories))
     if filter_form.search.data:
         s = filter_form.search.data.strip()
         community_query = community_query.filter(
@@ -179,6 +236,16 @@ def community():
         v.TicketId for v in TicketVote.query.filter_by(UserId=current_user.UserId).all()
     }
 
+    category_options = list(CATEGORY_SUBCATEGORY_MAP.keys())
+    if selected_categories:
+        available_subcategories = sorted({
+            s for c in selected_categories for s in CATEGORY_SUBCATEGORY_MAP.get(c, [])
+        })
+    else:
+        available_subcategories = sorted({
+            s for subs in CATEGORY_SUBCATEGORY_MAP.values() for s in subs
+        })
+
     return render_template(
         'student/community.html',
         tickets=pagination.items,
@@ -186,6 +253,11 @@ def community():
         my_ticket_votes=my_ticket_votes,
         filter_form=filter_form,
         view_mode=view_mode,
+        category_options=category_options,
+        available_subcategories=available_subcategories,
+        selected_categories=selected_categories,
+        selected_subcategories=selected_subcategories,
+        subcategory_map=CATEGORY_SUBCATEGORY_MAP,
     )
 
 

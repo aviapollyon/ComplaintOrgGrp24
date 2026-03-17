@@ -243,9 +243,9 @@
                 <div class="flex-grow-1">
                   <div class="bg-primary bg-opacity-10 border border-primary rounded p-3">
                     <div class="d-flex justify-content-between mb-1">
-                      <span class="fw-semibold small text-primary">
+                      <span class="fw-semibold small activity-staff-author-name">
                         {{ update.author.FullName }}
-                        <span class="badge bg-primary ms-1" style="font-size:0.65rem;">
+                        <span class="badge bg-primary ms-1 comment-role-tag" style="font-size:0.65rem;">
                           {% if update.IsReplyThread %}
                             <i class="bi bi-chat-left-dots me-1"></i>Reply Thread
                           {% else %}
@@ -278,7 +278,7 @@
                           <div class="d-flex justify-content-between mb-1">
                             <span class="fw-semibold small">
                               {{ reply.author.FullName }}
-                              <span class="badge
+                              <span class="badge comment-role-tag
                                 {{ 'bg-primary' if reply.author.Role.value == 'Staff' else 'bg-secondary' }}
                                 ms-1" style="font-size:0.65rem;">
                                 {{ reply.author.Role.value }}
