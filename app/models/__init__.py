@@ -15,3 +15,4 @@ from app.models.ticket_vote         import TicketVote                 # noqa: F4
 from app.models.ticket_comment      import TicketComment              # noqa: F401
 from app.models.comment_vote        import CommentVote                # noqa: F401
 from app.models.user_preference     import UserPreference             # noqa: F401
+from app.models.pending_registration import PendingRegistration       # noqa: F401

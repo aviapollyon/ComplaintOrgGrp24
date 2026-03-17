@@ -1,10 +1,15 @@
 from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from flask_login import login_user, logout_user, login_required, current_user
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask_mail import Message
 from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
+import threading
+import hashlib
+import secrets
+from werkzeug.security import generate_password_hash
 from app import db
 from app.models.user import User, RoleEnum
+from app.models.pending_registration import PendingRegistration
 from app.utils.helpers import log_audit
 from app import mail
 
@@ -80,9 +85,135 @@ def _send_password_reset_email(user: User, token: str):
             recipients=[user.Email],
             body=body,
         )
-        mail.send(msg)
+        app_obj = current_app._get_current_object()
+
+        def _send_in_background(app, message, email):
+            try:
+                with app.app_context():
+                    mail.send(message)
+            except Exception:
+                app.logger.exception('Failed sending password reset email to %s', email)
+
+        threading.Thread(
+            target=_send_in_background,
+            args=(app_obj, msg, user.Email),
+            daemon=True,
+        ).start()
     except Exception:
         current_app.logger.exception('Failed sending password reset email to %s', user.Email)
+
+
+def _hash_token(raw_token: str) -> str:
+    return hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+
+
+def _build_verification_token(pending: PendingRegistration) -> str:
+    payload = {
+        'pid': pending.PendingId,
+        'thm': pending.VerificationTokenHash[-16:],
+        'em': pending.Email,
+    }
+    return _token_serializer().dumps(payload, salt='email-verify')
+
+
+def _send_verification_email(pending: PendingRegistration, token: str):
+    verify_link = url_for('auth.verify_email', token=token, _external=True)
+    body = (
+        f'Hello {pending.FullName},\n\n'
+        'Complete your DUT Grievance Portal registration by verifying your email address.\n\n'
+        f'Verify your email: {verify_link}\n\n'
+        f'This link expires in '
+        f'{int(current_app.config.get("EMAIL_VERIFY_TOKEN_TTL_SECONDS", 3600)) // 60} minutes.\n\n'
+        'If you did not request this registration, you can ignore this message.\n'
+    )
+    try:
+        msg = Message(
+            subject='[DUT Grievance Portal] Verify Your Email',
+            recipients=[pending.Email],
+            body=body,
+        )
+        app_obj = current_app._get_current_object()
+
+        def _send_in_background(app, message, email):
+            try:
+                with app.app_context():
+                    mail.send(message)
+            except Exception:
+                app.logger.exception('Failed sending verification email to %s', email)
+
+        threading.Thread(
+            target=_send_in_background,
+            args=(app_obj, msg, pending.Email),
+            daemon=True,
+        ).start()
+    except Exception:
+        current_app.logger.exception('Failed sending verification email to %s', pending.Email)
+
+
+def _issue_pending_verification(full_name: str, email: str, password: str, role: RoleEnum):
+    pending = PendingRegistration.query.filter_by(Email=email).first()
+    if pending and pending.ConsumedAt is not None:
+        db.session.delete(pending)
+        db.session.flush()
+        pending = None
+
+    raw_secret = secrets.token_urlsafe(32)
+    token_hash = _hash_token(raw_secret)
+    ttl_seconds = int(current_app.config.get('EMAIL_VERIFY_TOKEN_TTL_SECONDS', 3600))
+    now = datetime.utcnow()
+
+    if not pending:
+        pending = PendingRegistration(
+            FullName=full_name,
+            Email=email,
+            PasswordHash=generate_password_hash(password),
+            Role=role,
+            POPIAConsent=True,
+            POPIAConsentAt=now,
+            VerificationTokenHash=token_hash,
+            VerificationExpiresAt=now,
+        )
+        db.session.add(pending)
+        db.session.flush()
+    else:
+        pending.FullName = full_name
+        pending.PasswordHash = generate_password_hash(password)
+        pending.Role = role
+        pending.POPIAConsent = True
+        pending.POPIAConsentAt = now
+        pending.VerificationTokenHash = token_hash
+        pending.ConsumedAt = None
+
+    pending.VerificationExpiresAt = now + timedelta(seconds=ttl_seconds)
+    pending.LastVerificationSentAt = now
+    db.session.flush()
+
+    token = _build_verification_token(pending)
+    _send_verification_email(pending, token)
+    return pending
+
+
+def _resolve_pending_registration(token: str):
+    max_age = int(current_app.config.get('EMAIL_VERIFY_TOKEN_TTL_SECONDS', 3600))
+    try:
+        payload = _token_serializer().loads(token, salt='email-verify', max_age=max_age)
+    except SignatureExpired:
+        return None, 'This verification link has expired. Please request a new one.'
+    except BadSignature:
+        return None, 'This verification link is invalid. Please request a new one.'
+
+    pending = PendingRegistration.query.get(payload.get('pid'))
+    if not pending:
+        return None, 'This verification request no longer exists. Please register again.'
+    if pending.ConsumedAt is not None:
+        return None, 'This verification link has already been used. Please sign in.'
+    if pending.Email != payload.get('em'):
+        return None, 'This verification link is invalid. Please request a new one.'
+    if payload.get('thm') != pending.VerificationTokenHash[-16:]:
+        return None, 'This verification link is no longer valid. Please request a new one.'
+    if pending.VerificationExpiresAt < datetime.utcnow():
+        return None, 'This verification link has expired. Please request a new one.'
+    return pending, None
 
 
 # Home/index route: redirect authenticated users to their dashboard, otherwise to login
@@ -195,28 +326,83 @@ def register():
             flash('Email already registered.', 'danger')
             return render_template('auth/register.html')
 
-        # Instantiate fresh user Object tracking directly aligning column mapping assignments
-        user = User(
-            FullName     = full_name,
-            Email        = email,
-            Role         = role,
-            DepartmentId = None,
-            POPIAConsent = True,
-            POPIAConsentAt = datetime.utcnow(),
-        )
-        
-        # Invoke User Model functionality that permanently encrypts passwords behind werkzeug_security hashes   
-        user.set_password(password)
-        
-        # Enter changes to the SQL Alchemy staging tracking layer + hard-commit SQL queries directly to DB file
-        db.session.add(user)
+        _issue_pending_verification(full_name, email, password, role)
         db.session.commit()
 
-        flash('Account created! You can now log in.', 'success')
+        flash(
+            'Verification email sent. Please click the link in your inbox to activate your account.',
+            'info'
+        )
         return redirect(url_for('auth.login'))
 
     # Deliver view-state render configuration for users navigating into the web portal registration area
     return render_template('auth/register.html')
+
+
+@auth_bp.route('/verify-email/<token>')
+def verify_email(token):
+    pending, error = _resolve_pending_registration(token)
+    if error:
+        flash(error, 'danger')
+        return redirect(url_for('auth.register'))
+
+    if User.query.filter_by(Email=pending.Email).first():
+        pending.ConsumedAt = datetime.utcnow()
+        db.session.commit()
+        flash('This email is already verified. You can sign in now.', 'info')
+        return redirect(url_for('auth.login'))
+
+    user = User(
+        FullName=pending.FullName,
+        Email=pending.Email,
+        PasswordHash=pending.PasswordHash,
+        Role=pending.Role,
+        DepartmentId=None,
+        POPIAConsent=bool(pending.POPIAConsent),
+        POPIAConsentAt=pending.POPIAConsentAt,
+        IsActive=True,
+        CreatedAt=datetime.utcnow(),
+        UpdatedAt=datetime.utcnow(),
+    )
+    pending.ConsumedAt = datetime.utcnow()
+    db.session.add(user)
+    db.session.commit()
+
+    flash('Email verified. Your account is now active and ready to use.', 'success')
+    return redirect(url_for('auth.login'))
+
+
+@auth_bp.route('/resend-verification', methods=['POST'])
+def resend_verification():
+    email = request.form.get('email', '').strip().lower()
+    if not email:
+        flash('Please provide your email to resend verification.', 'warning')
+        return redirect(url_for('auth.register'))
+
+    pending = PendingRegistration.query.filter_by(Email=email).first()
+    if not pending or pending.ConsumedAt is not None or User.query.filter_by(Email=email).first():
+        flash('If a pending registration exists for that email, a new verification link has been sent.', 'info')
+        return redirect(url_for('auth.login'))
+
+    cooldown = int(current_app.config.get('EMAIL_VERIFY_RESEND_COOLDOWN_SECONDS', 60))
+    if pending.LastVerificationSentAt and (datetime.utcnow() - pending.LastVerificationSentAt).total_seconds() < cooldown:
+        flash('Please wait before requesting another verification email.', 'warning')
+        return redirect(url_for('auth.register'))
+
+    raw_secret = secrets.token_urlsafe(32)
+    pending.VerificationTokenHash = _hash_token(raw_secret)
+    pending.VerificationExpiresAt = datetime.utcnow() + timedelta(
+        seconds=int(current_app.config.get('EMAIL_VERIFY_TOKEN_TTL_SECONDS', 3600))
+    )
+    pending.LastVerificationSentAt = datetime.utcnow()
+    db.session.flush()
+
+    token = _build_verification_token(pending)
+    _send_verification_email(pending, token)
+    db.session.commit()
+
+    flash('Verification email re-sent. Check your inbox.', 'success')
+    return redirect(url_for('auth.login'))
 
 
 @auth_bp.route('/forgot-password', methods=['GET', 'POST'])

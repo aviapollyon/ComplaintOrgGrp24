@@ -50,6 +50,10 @@ class Config:
 
     # Password reset
     RESET_TOKEN_TTL_SECONDS = int(os.environ.get('RESET_TOKEN_TTL_SECONDS', 3600))
+    EMAIL_VERIFY_TOKEN_TTL_SECONDS = int(os.environ.get('EMAIL_VERIFY_TOKEN_TTL_SECONDS', 3600))
+    EMAIL_VERIFY_RESEND_COOLDOWN_SECONDS = int(
+        os.environ.get('EMAIL_VERIFY_RESEND_COOLDOWN_SECONDS', 60)
+    )
 
     # Background SLA monitor
     SLA_MONITOR_ENABLED = os.environ.get('SLA_MONITOR_ENABLED', 'true').lower() == 'true'

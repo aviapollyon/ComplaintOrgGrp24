@@ -14,7 +14,7 @@ from app.models.attachment    import Attachment
 from app.models.department    import Department
 from app.models.reopen_request import ReopenRequest
 from app.models.admin_notification import AdminNotification
-from app.models.user import RoleEnum
+from app.models.user import User, RoleEnum
 from app.models.ticket_vote import TicketVote
 from app.models.ticket_comment import TicketComment
 from app.models.comment_vote import CommentVote
@@ -27,6 +27,7 @@ from app.utils.helpers        import (
 )
 from app.utils.sorting        import apply_sort
 from app.services.assignment  import auto_assign_ticket
+from app.services.realtime import publish_user_event
 from app.services.notifications import (
     notify_student_replied,
     notify_ticket_submitted,
@@ -40,6 +41,28 @@ from app.forms.student_forms  import (
 )
 
 student_bp = Blueprint('student', __name__)
+
+
+def _publish_ticket_activity(ticket: Ticket, action: str, actor_id: int, extra: dict = None):
+    recipients = {ticket.StudentId, actor_id}
+    if ticket.StaffId:
+        recipients.add(ticket.StaffId)
+    admin_ids = [u.UserId for u in User.query.filter_by(Role=RoleEnum.Admin, IsActive=True).all()]
+    recipients.update(admin_ids)
+
+    payload = {
+        'ticket_id': ticket.TicketId,
+        'action': action,
+        'actor_id': actor_id,
+        'vote_count': ticket.vote_count,
+        'comment_count': ticket.comment_count,
+    }
+    if extra:
+        payload.update(extra)
+
+    for uid in recipients:
+        if uid:
+            publish_user_event(uid, 'ticket_activity', payload)
 
 
 def _resolve_view_mode(default='list'):
@@ -258,6 +281,7 @@ def submit_ticket():
         notify_ticket_submitted(ticket)
 
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_submitted', current_user.UserId)
         flash(
             f'Your complaint has been submitted. '
             f'Tracking reference: {ticket.TrackingRef}. '
@@ -354,6 +378,7 @@ def vote_ticket(ticket_id):
         flash('Your vote was recorded.', 'success')
 
     db.session.commit()
+    _publish_ticket_activity(ticket, 'ticket_vote_changed', current_user.UserId)
     return redirect(request.referrer or url_for('student.community'))
 
 
@@ -383,6 +408,7 @@ def add_ticket_comment(ticket_id):
         notify_social_comment(ticket, current_user)
 
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_comment_added', current_user.UserId)
         flash('Comment posted.', 'success')
     else:
         flash('Comment must be 2-500 characters.', 'danger')
@@ -410,6 +436,14 @@ def upvote_comment(comment_id):
 
     try:
         db.session.commit()
+        ticket = Ticket.query.get(comment.TicketId)
+        if ticket:
+            _publish_ticket_activity(
+                ticket,
+                'comment_upvote_changed',
+                current_user.UserId,
+                {'comment_id': comment.CommentId, 'comment_author_id': comment.UserId},
+            )
     except IntegrityError:
         db.session.rollback()
         flash('Upvote update failed, please try again.', 'danger')
@@ -534,6 +568,7 @@ def reply_to_update(ticket_id, update_id):
         notify_student_replied(ticket, current_user)
         ticket.UpdatedAt = datetime.utcnow()
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_reply_added', current_user.UserId)
         flash('Reply sent.', 'success')
     else:
         flash('Reply cannot be empty.', 'danger')
@@ -557,6 +592,7 @@ def withdraw_ticket(ticket_id):
         StatusChange=UpdateStatusEnum.Rejected, IsReplyThread=False,
     ))
     db.session.commit()
+    _publish_ticket_activity(ticket, 'ticket_withdrawn', current_user.UserId)
     flash('Your complaint has been withdrawn.', 'info')
     return redirect(url_for('student.dashboard'))
 
@@ -610,13 +646,15 @@ def request_reopen(ticket_id):
         ))
         ticket.UpdatedAt = datetime.utcnow()
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_reopen_requested', current_user.UserId)
         from app.services.notifications import _send_admin_emails
+        admin_ticket_url = url_for('admin.ticket_detail', ticket_id=ticket_id, _external=True)
         _send_admin_emails(
             f'Reopen Request — Ticket #{ticket_id}',
             (f'Student {current_user.FullName} has requested reopening of ticket '
              f'"#{ticket_id} {ticket.Title}".\n\n'
              f'Reason: {form.reason.data.strip()}\n\n'
-             f'Review it at: /admin/tickets/{ticket_id}'),
+             f'Review it at: {admin_ticket_url}'),
         )
         flash('Reopen request submitted. Admin will review it shortly.', 'success')
     else:

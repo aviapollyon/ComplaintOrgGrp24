@@ -22,6 +22,7 @@ from app.services.notifications   import (
     notify_ticket_resolved, notify_ticket_rejected,
     notify_progress_update, notify_sla_breach,
 )
+from app.services.realtime import publish_user_event
 from app.forms.staff_forms import (
     UpdateTicketForm, ResolveTicketForm,
     ReplyForm, StaffThreadReplyForm,
@@ -30,6 +31,28 @@ from app.forms.staff_forms import (
 )
 
 staff_bp = Blueprint('staff', __name__)
+
+
+def _publish_ticket_activity(ticket: Ticket, action: str, actor_id: int, extra: dict = None):
+    recipients = {ticket.StudentId, actor_id}
+    if ticket.StaffId:
+        recipients.add(ticket.StaffId)
+    admin_ids = [u.UserId for u in User.query.filter_by(Role=RoleEnum.Admin, IsActive=True).all()]
+    recipients.update(admin_ids)
+
+    payload = {
+        'ticket_id': ticket.TicketId,
+        'action': action,
+        'actor_id': actor_id,
+        'status': ticket.Status.value if ticket.Status else None,
+        'priority': ticket.Priority.value if ticket.Priority else None,
+    }
+    if extra:
+        payload.update(extra)
+
+    for uid in recipients:
+        if uid:
+            publish_user_event(uid, 'ticket_activity', payload)
 
 _STATUS_MAP = {
     'In Progress': (StatusEnum.InProgress, UpdateStatusEnum.InProgress),
@@ -488,6 +511,7 @@ def update_ticket(ticket_id):
         else:
             notify_status_update(ticket, current_user)
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_status_changed', current_user.UserId)
         flash(f'Status updated to "{form.status.data}".', 'success')
     else:
         flash('Please fill in all required fields.', 'danger')
@@ -514,6 +538,7 @@ def update_ticket_priority(ticket_id):
             IsReplyThread=False,
         ))
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_priority_changed', current_user.UserId)
         flash(f'Priority updated to "{form.priority.data}".', 'success')
     else:
         flash('Please select a priority and provide a reason (min 5 characters).', 'danger')
@@ -537,6 +562,7 @@ def resolve_ticket(ticket_id):
         ))
         notify_ticket_resolved(ticket, current_user)
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_resolved', current_user.UserId)
         flash('Ticket marked as resolved.', 'success')
     else:
         flash('Please provide resolution details.', 'danger')
@@ -564,6 +590,7 @@ def reply_ticket(ticket_id):
         db.session.add(update)
         notify_staff_reply(ticket, current_user)
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_reply_added', current_user.UserId)
         flash('Reply sent. Status set to Pending Info.', 'success')
     else:
         flash('Message cannot be empty.', 'danger')
@@ -602,6 +629,7 @@ def thread_reply(ticket_id, update_id):
         ticket.UpdatedAt = datetime.utcnow()
         notify_staff_reply(ticket, current_user)
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_thread_reply_added', current_user.UserId)
         flash('Reply added.', 'success')
     else:
         flash('Reply cannot be empty.', 'danger')
@@ -663,13 +691,15 @@ def request_escalation(ticket_id):
         ))
         ticket.UpdatedAt = datetime.utcnow()
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_escalation_requested', current_user.UserId)
         from app.services.notifications import _send_admin_emails
+        admin_ticket_url = url_for('admin.ticket_detail', ticket_id=ticket_id, _external=True)
         _send_admin_emails(
             f'Escalation Request — Ticket #{ticket_id}',
             (f'{current_user.FullName} has requested escalation of ticket '
              f'"#{ticket_id} {ticket.Title}" to {target_dept.Name}.\n\n'
              f'Reason: {form.reason.data.strip()}\n\n'
-             f'Review it at: /admin/tickets/{ticket_id}'),
+             f'Review it at: {admin_ticket_url}'),
         )
         flash('Escalation request submitted.', 'success')
     else:
@@ -724,13 +754,15 @@ def request_reassignment(ticket_id):
         ))
         ticket.UpdatedAt = datetime.utcnow()
         db.session.commit()
+        _publish_ticket_activity(ticket, 'ticket_reassignment_requested', current_user.UserId)
         from app.services.notifications import _send_admin_emails
+        admin_ticket_url = url_for('admin.ticket_detail', ticket_id=ticket_id, _external=True)
         _send_admin_emails(
             f'Reassignment Request — Ticket #{ticket_id}',
             (f'{current_user.FullName} has requested reassignment of ticket '
              f'"#{ticket_id} {ticket.Title}" to {target.FullName}.\n\n'
              f'Reason: {form.reason.data.strip()}\n\n'
-             f'Review it at: /admin/tickets/{ticket_id}'),
+             f'Review it at: {admin_ticket_url}'),
         )
         flash('Reassignment request submitted to admin.', 'success')
     else:

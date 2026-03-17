@@ -19,4 +19,4 @@ app = create_app()
 
 if __name__ == '__main__':
     start_sla_monitor(app)
-    app.run(debug=True, use_reloader=False, port=5000)
+    app.run(debug=True, use_reloader=False, port=5000, threaded=True)

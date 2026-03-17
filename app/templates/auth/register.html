@@ -56,7 +56,7 @@
     <div class="col-lg-5">
       <div class="auth-modern-form h-100">
         <h3 class="auth-form-title mb-1">Create account</h3>
-        <p class="auth-form-sub mb-4">Complete all required fields to start using the portal.</p>
+        <p class="auth-form-sub mb-4">Complete all fields, then verify your email to activate your account.</p>
 
         <form method="POST" action="{{ url_for('auth.register') }}" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
@@ -100,21 +100,71 @@
           </div>
 
           <div class="auth-popia-box mb-4">
+            <p class="small text-muted mb-2">
+              <strong>Republic of South Africa - POPIA (Act 4 of 2013)</strong>
+            </p>
+            <p class="small mb-2">
+              DUT is committed to protecting your personal information in accordance with POPIA.
+              Before creating an account, please review and acknowledge the following:
+            </p>
+
+            <h6 class="fw-semibold small mt-3 mb-1">What information we collect</h6>
+            <ul class="small text-muted mb-2">
+              <li>Your full name and institutional email address</li>
+              <li>The content of complaints and grievances you submit</li>
+              <li>Any attachments uploaded in support of your complaint</li>
+              <li>Ticket activity history and communications with staff</li>
+            </ul>
+
+            <h6 class="fw-semibold small mt-3 mb-1">Why we collect it</h6>
+            <ul class="small text-muted mb-2">
+              <li>To process, manage, and resolve your complaint or grievance</li>
+              <li>To communicate ticket updates to you</li>
+              <li>To improve service delivery through analytics</li>
+            </ul>
+
+            <h6 class="fw-semibold small mt-3 mb-1">How we protect it</h6>
+            <ul class="small text-muted mb-2">
+              <li>Your data is stored securely on institutional servers</li>
+              <li>Access is restricted to authorized staff</li>
+              <li>Passwords are hashed and not stored in plain text</li>
+              <li>Data is not shared without consent unless required by law</li>
+            </ul>
+
+            <h6 class="fw-semibold small mt-3 mb-1">Your rights under POPIA</h6>
+            <ul class="small text-muted mb-3">
+              <li>You can request access to personal information held by DUT</li>
+              <li>You can request correction or deletion of your information</li>
+              <li>You can object to certain processing of your information</li>
+              <li>
+                You can lodge a complaint with the
+                <a href="https://inforegulator.org.za" target="_blank" rel="noopener">Information Regulator of South Africa</a>
+              </li>
+            </ul>
+
             <div class="form-check">
               <input class="form-check-input" type="checkbox" value="1" id="popia_agree" name="popia_agree" {% if request.form.get('popia_agree') == '1' %}checked{% endif %} required>
               <label class="form-check-label small" for="popia_agree">
-                I acknowledge and agree to the POPIA compliance statement for lawful data processing,
-                secure storage, and complaint management within the DUT Grievance Portal.
+                I have read and consent to the processing of my personal information in accordance
+                with POPIA for the purposes of the DUT Grievance Portal.
               </label>
             </div>
           </div>
 
           <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
-            <i class="bi bi-person-plus me-2"></i>Create Account
+            <i class="bi bi-envelope-check me-2"></i>Send Verification Link
           </button>
         </form>
 
         <hr class="my-4"/>
+        <form method="POST" action="{{ url_for('auth.resend_verification') }}" class="mb-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+          <label class="form-label small fw-semibold">Need another verification email?</label>
+          <div class="input-group input-group-sm">
+            <input type="email" name="email" class="form-control" placeholder="name@dut4life.ac.za" required/>
+            <button type="submit" class="btn btn-outline-primary">Resend</button>
+          </div>
+        </form>
         <p class="text-center mb-0 small">
           Already registered?
           <a href="{{ url_for('auth.login') }}" class="fw-semibold">Sign in here</a>

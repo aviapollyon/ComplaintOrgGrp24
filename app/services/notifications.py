@@ -1,8 +1,13 @@
 import logging
 import sys
+import threading
+
+from flask import url_for
 
 from app import db
 from app.models.user_notification import UserNotification
+from app.models.user import User, RoleEnum
+from app.services.realtime import publish_user_event
 
 logger = logging.getLogger(__name__)
 
@@ -13,14 +18,66 @@ logger = logging.getLogger(__name__)
 
 def notify(user_id: int, title: str, message: str,
            notif_type: str = 'general', ticket_id: int = None):
-    db.session.add(UserNotification(
+    notification = UserNotification(
         UserId   = user_id,
         Title    = title,
         Message  = message,
         Type     = notif_type,
         IsRead   = False,
         TicketId = ticket_id,
-    ))
+    )
+    db.session.add(notification)
+    publish_user_event(
+        user_id,
+        'notification',
+        {
+            'title': title,
+            'message': message,
+            'type': notif_type,
+            'ticket_id': ticket_id,
+            'ticket_link': _ticket_link_for_user(user_id, ticket_id) if ticket_id else None,
+        },
+    )
+
+
+def _ticket_link_for_user(user_id: int, ticket_id: int) -> str:
+    if not ticket_id:
+        return ''
+
+    user = User.query.get(user_id)
+    if not user:
+        return ''
+
+    if user.Role == RoleEnum.Student:
+        return url_for('student.view_ticket', ticket_id=ticket_id, _external=True)
+    if user.Role == RoleEnum.Staff:
+        return url_for('staff.view_ticket', ticket_id=ticket_id, _external=True)
+    if user.Role == RoleEnum.Admin:
+        return url_for('admin.ticket_detail', ticket_id=ticket_id, _external=True)
+    return ''
+
+
+def _dashboard_link_for_user(user_id: int) -> str:
+    user = User.query.get(user_id)
+    if not user:
+        return ''
+
+    if user.Role == RoleEnum.Student:
+        return url_for('student.dashboard', _external=True)
+    if user.Role == RoleEnum.Staff:
+        return url_for('staff.dashboard', _external=True)
+    if user.Role == RoleEnum.Admin:
+        return url_for('admin.dashboard', _external=True)
+    return ''
+
+
+def _email_body_with_link(message: str, user_id: int, ticket_id: int = None, action_text: str = 'Open link'):
+    target = _ticket_link_for_user(user_id, ticket_id) if ticket_id else ''
+    if not target:
+        target = _dashboard_link_for_user(user_id)
+    if not target:
+        return message
+    return f'{message}\n\n{action_text}: {target}'
 
 
 def _notification_exists(user_id: int, notif_type: str, ticket_id: int) -> bool:
@@ -58,8 +115,26 @@ def _send_email(recipient_email: str, subject: str, body: str):
             recipients = [recipient_email],
             body       = body,
         )
-        mail.send(msg)
-        logger.info('[EMAIL SENT] To: %s | Subject: %s', recipient_email, subject)
+
+        app_obj = current_app._get_current_object()
+
+        def _send_in_background(app, message, email_to, email_subject):
+            try:
+                with app.app_context():
+                    mail.send(message)
+                logger.info('[EMAIL SENT] To: %s | Subject: %s', email_to, email_subject)
+            except Exception as bg_exc:
+                logger.error(
+                    '[EMAIL ERROR] Failed to send to %s | Subject: %s | Error: %s',
+                    email_to, email_subject, bg_exc, exc_info=True
+                )
+
+        t = threading.Thread(
+            target=_send_in_background,
+            args=(app_obj, msg, recipient_email, subject),
+            daemon=True,
+        )
+        t.start()
     except Exception as exc:
         logger.error(
             '[EMAIL ERROR] Failed to send to %s | Subject: %s | Error: %s',
@@ -111,7 +186,7 @@ def notify_ticket_submitted(ticket):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nLog in to view your ticket: /student/dashboard',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'View your ticket'),
     )
 
 
@@ -129,7 +204,7 @@ def notify_ticket_assigned(ticket):
         _send_email(
             _get_user_email(ticket.StaffId),
             title,
-            f'{message}\n\nLog in to manage this ticket: /staff/dashboard',
+            _email_body_with_link(message, ticket.StaffId, ticket.TicketId, 'Open assigned ticket'),
         )
 
 
@@ -148,7 +223,7 @@ def notify_status_update(ticket, changed_by_user):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nLog in to view the update: /student/dashboard',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'View update'),
     )
 
 
@@ -167,7 +242,7 @@ def notify_staff_reply(ticket, staff_user):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nLog in to reply: /student/dashboard',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'View and reply'),
     )
 
 
@@ -186,7 +261,7 @@ def notify_student_replied(ticket, student_user):
         _send_email(
             _get_user_email(ticket.StaffId),
             title,
-            f'{message}\n\nLog in to view the reply: /staff/dashboard',
+            _email_body_with_link(message, ticket.StaffId, ticket.TicketId, 'View student reply'),
         )
 
 
@@ -205,7 +280,7 @@ def notify_ticket_resolved(ticket, staff_user):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nLog in to rate your experience: /student/dashboard',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'Rate this ticket'),
     )
 
 
@@ -223,7 +298,7 @@ def notify_ticket_rejected(ticket, actor):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nLog in to view details: /student/dashboard',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'View details'),
     )
 
 
@@ -242,7 +317,7 @@ def notify_progress_update(ticket, staff_user):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nLog in to view the update: /student/dashboard',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'View progress update'),
     )
 
 
@@ -274,7 +349,7 @@ def notify_sla_breach(ticket, breach_type: str):
             _send_email(
                 _get_user_email(ticket.StaffId),
                 title,
-                f'{message}\n\nOpen: /staff/ticket/{ticket.TicketId}',
+                _email_body_with_link(message, ticket.StaffId, ticket.TicketId, 'Open ticket'),
             )
 
     admins = User.query.filter_by(Role=RoleEnum.Admin, IsActive=True).all()
@@ -286,7 +361,7 @@ def notify_sla_breach(ticket, breach_type: str):
             _send_email(
                 admin.Email or '',
                 title,
-                f'{message}\n\nOpen: /admin/tickets/{ticket.TicketId}',
+                _email_body_with_link(message, admin.UserId, ticket.TicketId, 'Open ticket'),
             )
 
 
@@ -303,7 +378,7 @@ def notify_social_vote(ticket, voter):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nView ticket: /student/ticket/{ticket.TicketId}',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'View ticket'),
     )
 
 
@@ -320,7 +395,7 @@ def notify_social_comment(ticket, commenter):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nView ticket: /student/ticket/{ticket.TicketId}',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'View ticket'),
     )
 
 
@@ -341,7 +416,7 @@ def notify_ticket_reopened(ticket, admin_user):
     _send_email(
         _get_user_email(ticket.StudentId),
         s_title,
-        f'{s_message}\n\nLog in to follow up: /student/dashboard',
+        _email_body_with_link(s_message, ticket.StudentId, ticket.TicketId, 'Follow up on ticket'),
     )
     # Notify staff
     if ticket.StaffId:
@@ -358,7 +433,7 @@ def notify_ticket_reopened(ticket, admin_user):
         _send_email(
             _get_user_email(ticket.StaffId),
             st_title,
-            f'{st_message}\n\nLog in to manage this ticket: /staff/dashboard',
+            _email_body_with_link(st_message, ticket.StaffId, ticket.TicketId, 'Manage ticket'),
         )
 
 
@@ -377,7 +452,7 @@ def notify_reassignment_approved(ticket, new_staff, old_staff):
     _send_email(
         new_staff.Email or '',
         ns_title,
-        f'{ns_message}\n\nLog in to manage this ticket: /staff/dashboard',
+        _email_body_with_link(ns_message, new_staff.UserId, ticket.TicketId, 'Manage ticket'),
     )
     if old_staff:
         os_title   = f'Ticket #{ticket.TicketId} Reassigned'
@@ -394,7 +469,7 @@ def notify_reassignment_approved(ticket, new_staff, old_staff):
         _send_email(
             old_staff.Email or '',
             os_title,
-            f'{os_message}\n\nLog in to view your tickets: /staff/dashboard',
+            _email_body_with_link(os_message, old_staff.UserId, ticket.TicketId, 'View ticket'),
         )
 
 
@@ -413,7 +488,7 @@ def notify_reassignment_rejected(ticket, requesting_staff):
     _send_email(
         requesting_staff.Email or '',
         title,
-        f'{message}\n\nLog in to view the ticket: /staff/dashboard',
+        _email_body_with_link(message, requesting_staff.UserId, ticket.TicketId, 'View ticket'),
     )
 
 
@@ -432,7 +507,7 @@ def notify_reopen_rejected(ticket):
     _send_email(
         _get_user_email(ticket.StudentId),
         title,
-        f'{message}\n\nLog in to view your tickets: /student/dashboard',
+        _email_body_with_link(message, ticket.StudentId, ticket.TicketId, 'View ticket'),
     )
 
 
@@ -451,5 +526,5 @@ def notify_escalation_rejected(ticket, requesting_staff):
     _send_email(
         requesting_staff.Email or '',
         title,
-        f'{message}\n\nLog in to view the ticket: /staff/dashboard',
+        _email_body_with_link(message, requesting_staff.UserId, ticket.TicketId, 'View ticket'),
     )

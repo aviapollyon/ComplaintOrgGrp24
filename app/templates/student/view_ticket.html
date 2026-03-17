@@ -334,8 +334,9 @@
                           <div class="d-flex gap-2 align-items-center">
                             <label class="btn btn-sm btn-outline-secondary mb-0">
                               <i class="bi bi-paperclip"></i>
-                              {{ reply_form.attachments(class="d-none", multiple=True) }}
+                              {{ reply_form.attachments(class="d-none", id='fileInput_reply_' ~ update.UpdateId, multiple=True) }}
                             </label>
+                            <div id="selectedFiles_fileInput_reply_{{ update.UpdateId }}" class="small text-muted text-truncate" style="max-width: 58%;">No files selected</div>
                             <button type="submit" class="btn btn-sm btn-primary ms-auto">
                               <i class="bi bi-send me-1"></i>Reply
                             </button>

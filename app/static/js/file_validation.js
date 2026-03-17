@@ -9,6 +9,29 @@
 const MAX_FILES = 5;
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 
+function ensureSelectedFilesContainer(input) {
+    const containerId = 'selectedFiles_' + input.id;
+    let container = document.getElementById(containerId);
+    if (container) return container;
+
+    container = document.createElement('div');
+    container.id = containerId;
+    container.className = 'small text-muted mt-1';
+    container.textContent = 'No files selected';
+
+    const anchor = input.closest('label') || input;
+    anchor.insertAdjacentElement('afterend', container);
+    return container;
+}
+
+function updateSelectedFiles(input) {
+    const container = ensureSelectedFilesContainer(input);
+    const files = Array.from(input.files || []);
+    container.textContent = files.length
+        ? files.map(f => f.name).join(', ')
+        : 'No files selected';
+}
+
 function validateFileInput(input) {
     const warningId = 'fileWarn_' + input.id;
     let warning = document.getElementById(warningId);
@@ -48,9 +71,11 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('input[type="file"]').forEach(input => {
         // Give each file input a stable id if it doesn't have one
         if (!input.id) input.id = 'fileInput_' + Math.random().toString(36).slice(2);
+        updateSelectedFiles(input);
 
         input.addEventListener('change', () => {
             validateFileInput(input);
+            updateSelectedFiles(input);
 
             // Update the filename label if present
             const labelId = input.id.replace('fileInput_', 'fileLabel_');
