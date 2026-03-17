@@ -19,6 +19,8 @@ from app.models.department       import Department
 from app.models.announcement     import Announcement
 from app.models.admin_notification import AdminNotification
 from app.models.escalation       import EscalationRequest
+from app.models.reassignment_request import ReassignmentRequest
+from app.models.reopen_request   import ReopenRequest
 from app.models.ticket_comment   import TicketComment
 from app.models.ticket_flag      import TicketFlag, FlaggedTicket
 from app.utils.decorators        import role_required
@@ -35,6 +37,16 @@ from app.services.notifications import notify_sla_breach
 
 # Create a Flask Blueprint for admin-related routes
 admin_bp = Blueprint('admin', __name__)
+STUDENT_EMAIL_DOMAIN = '@dut4life.ac.za'
+STAFF_ADMIN_EMAIL_DOMAIN = '@dut.ac.za'
+
+
+def _required_domain_for_role(role: RoleEnum) -> str:
+    return STUDENT_EMAIL_DOMAIN if role == RoleEnum.Student else STAFF_ADMIN_EMAIL_DOMAIN
+
+
+def _is_valid_domain_for_role(email: str, role: RoleEnum) -> bool:
+    return email.endswith(_required_domain_for_role(role))
 
 
 
@@ -113,6 +125,11 @@ def dashboard():
 
     # Count unread admin notifications for the bell icon
     unread_count = AdminNotification.query.filter_by(IsRead=False).count()
+    pending_actions_count = (
+        EscalationRequest.query.filter_by(Status='Pending').count()
+        + ReassignmentRequest.query.filter_by(Status='Pending').count()
+        + ReopenRequest.query.filter_by(Status='Pending').count()
+    )
 
     # Render the dashboard template with all stats and lists
     return render_template(
@@ -121,6 +138,38 @@ def dashboard():
         recent_tickets=recent_tickets,
         dept_stats=dept_stats,
         unread_count=unread_count,
+        pending_actions_count=pending_actions_count,
+    )
+
+
+@admin_bp.route('/pending-actions')
+@login_required
+@role_required('Admin')
+def pending_actions():
+    escalation_requests = (
+        EscalationRequest.query
+        .filter_by(Status='Pending')
+        .order_by(EscalationRequest.CreatedAt.asc())
+        .all()
+    )
+    reassignment_requests = (
+        ReassignmentRequest.query
+        .filter_by(Status='Pending')
+        .order_by(ReassignmentRequest.CreatedAt.asc())
+        .all()
+    )
+    reopen_requests = (
+        ReopenRequest.query
+        .filter_by(Status='Pending')
+        .order_by(ReopenRequest.CreatedAt.asc())
+        .all()
+    )
+
+    return render_template(
+        'admin/pending_actions.html',
+        escalation_requests=escalation_requests,
+        reassignment_requests=reassignment_requests,
+        reopen_requests=reopen_requests,
     )
 
 
@@ -269,16 +318,27 @@ def add_user():
         for d in Department.query.order_by(Department.Name).all()
     ]
     if form.validate_on_submit():
+        selected_role = RoleEnum[form.role.data]
+        normalized_email = form.email.data.strip().lower()
+
+        if not _is_valid_domain_for_role(normalized_email, selected_role):
+            flash(
+                f'{selected_role.value} accounts require an email ending with '
+                f'{_required_domain_for_role(selected_role)}.',
+                'danger'
+            )
+            return render_template('admin/user_form.html', form=form, edit=False)
+
         # Prevent creating multiple users with the same email
-        if User.query.filter_by(Email=form.email.data.strip().lower()).first():
+        if User.query.filter_by(Email=normalized_email).first():
             flash('Email already registered.', 'danger')
             return render_template('admin/user_form.html', form=form, edit=False)
 
         # Create the user object
         user = User(
             FullName     = form.full_name.data.strip(),
-            Email        = form.email.data.strip().lower(),
-            Role         = RoleEnum[form.role.data],
+            Email        = normalized_email,
+            Role         = selected_role,
             DepartmentId = form.department.data if form.department.data != 0 else None,
             IsActive     = True,
         )
@@ -317,9 +377,20 @@ def edit_user(user_id):
 
     # Handle POST request: Update user data if form is valid
     if form.validate_on_submit():
+        selected_role = RoleEnum[form.role.data]
+        normalized_email = form.email.data.strip().lower()
+
+        if not _is_valid_domain_for_role(normalized_email, selected_role):
+            flash(
+                f'{selected_role.value} accounts require an email ending with '
+                f'{_required_domain_for_role(selected_role)}.',
+                'danger'
+            )
+            return render_template('admin/user_form.html', form=form, edit=True, user=user)
+
         # Make sure the updated email does not conflict with another existing user
         existing = User.query.filter(
-            User.Email == form.email.data.strip().lower(),
+            User.Email == normalized_email,
             User.UserId != user_id
         ).first()
         if existing:
@@ -327,8 +398,8 @@ def edit_user(user_id):
             return render_template('admin/user_form.html', form=form, edit=True, user=user)
 
         user.FullName     = form.full_name.data.strip()
-        user.Email        = form.email.data.strip().lower()
-        user.Role         = RoleEnum[form.role.data]
+        user.Email        = normalized_email
+        user.Role         = selected_role
         user.DepartmentId = form.department.data if form.department.data != 0 else None
         user.UpdatedAt    = datetime.utcnow()
         log_audit('user_updated', target_type='user', target_id=user_id,
@@ -638,7 +709,7 @@ def force_priority(ticket_id):
             flash('Invalid priority.', 'danger')
             return redirect(url_for('admin.ticket_detail', ticket_id=ticket_id))
 
-        old_priority     = ticket.Priority.value
+        old_priority     = ticket.Priority.value if ticket.Priority else 'Not Set'
         ticket.Priority  = new_priority
         ticket.UpdatedAt = datetime.utcnow()
 
@@ -753,7 +824,11 @@ def export_tickets():
         # Write data rows
         for t in tickets_list:
             w.writerow([
-                t.TicketId, t.Title, t.Category, t.Priority.value, t.Status.value,
+                t.TicketId,
+                t.Title,
+                t.Category,
+                t.Priority.value if t.Priority else 'Not Set',
+                t.Status.value,
                 t.department.Name if t.department else '',
                 t.student.FullName if t.student else '',
                 t.staff.FullName   if t.staff    else '',
@@ -794,8 +869,7 @@ def departments():
                                 ~Ticket.Status.in_([StatusEnum.Resolved, StatusEnum.Rejected])
                             ).count(),
         })
-    add_form = AddDepartmentForm()
-    return render_template('admin/departments.html', dept_data=dept_data, add_form=add_form)
+    return render_template('admin/departments.html', dept_data=dept_data)
 
 
 # Add Department route

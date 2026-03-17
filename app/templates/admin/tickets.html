@@ -11,7 +11,7 @@
 </div>
 
 <!-- Filters -->
-<div class="card border-0 shadow-sm mb-4">
+<div class="card border-0 shadow-sm mb-4 filter-card">
   <div class="card-body">
     <form method="GET" class="row g-2 align-items-end">
       <div class="col-md-3">
@@ -100,6 +100,12 @@
   </div>
 </div>
 
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <span class="badge rounded-pill text-bg-primary px-3 py-2">Showing {{ tickets|length }} tickets</span>
+  <span class="badge rounded-pill text-bg-secondary px-3 py-2">Total matches {{ pagination.total }}</span>
+  <span class="badge rounded-pill text-bg-light border text-dark px-3 py-2">Page {{ pagination.page }} of {{ pagination.pages if pagination.pages else 1 }}</span>
+</div>
+
 <div class="card border-0 shadow-sm">
   <div class="table-responsive">
     <table class="table table-hover align-middle mb-0 small">
@@ -126,7 +132,8 @@
           <td>{{ t.staff.FullName   if t.staff   else '<span class="text-muted">Unassigned</span>' | safe }}</td>
           <td>{{ t.department.Name  if t.department else '—' }}</td>
           <td>
-            {% if t.Priority.value == 'High' %}     <span class="badge bg-danger">High</span>
+            {% if not t.Priority %}                 <span class="badge bg-secondary">Not Set</span>
+            {% elif t.Priority.value == 'High' %}  <span class="badge bg-danger">High</span>
             {% elif t.Priority.value == 'Medium' %} <span class="badge bg-warning text-dark">Medium</span>
             {% else %}                              <span class="badge bg-success">Low</span>
             {% endif %}

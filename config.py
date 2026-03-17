@@ -21,10 +21,8 @@ class Config:
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
     # Database configuration: use DATABASE_URL if set, otherwise SQLite in instance folder
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        'DATABASE_URL',
-        f"sqlite:///{os.path.join(BASE_DIR, 'instance', 'grievance.db')}"
-    )
+    _database_url = os.environ.get('DATABASE_URL', '').strip()
+    SQLALCHEMY_DATABASE_URI = _database_url or f"sqlite:///{os.path.join(BASE_DIR, 'instance', 'grievance.db')}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # File upload settings
@@ -40,14 +38,18 @@ class Config:
     MAIL_SERVER   = os.environ.get('MAIL_SERVER',   'smtp.gmail.com')
     MAIL_PORT     = int(os.environ.get('MAIL_PORT', 587))
     MAIL_USE_TLS  = os.environ.get('MAIL_USE_TLS',  'true').lower() == 'true'
+    MAIL_DEBUG    = os.environ.get('MAIL_DEBUG', 'false').lower() == 'true'
     MAIL_USERNAME = os.environ.get('MAIL_USERNAME', '')
     MAIL_PASSWORD = os.environ.get('MAIL_PASSWORD', '')
     MAIL_DEFAULT_SENDER = os.environ.get(
         'MAIL_DEFAULT_SENDER',
         os.environ.get('MAIL_USERNAME', 'noreply@example.com')
     )
-    # Flask-Mail: only suppress if explicitly set to 'true' in env
+    # Flask-Mail: suppress in development when explicitly set
     MAIL_SUPPRESS_SEND = os.environ.get('MAIL_SUPPRESS_SEND', 'false').lower() == 'true'
+
+    # Password reset
+    RESET_TOKEN_TTL_SECONDS = int(os.environ.get('RESET_TOKEN_TTL_SECONDS', 3600))
 
     # Background SLA monitor
     SLA_MONITOR_ENABLED = os.environ.get('SLA_MONITOR_ENABLED', 'true').lower() == 'true'

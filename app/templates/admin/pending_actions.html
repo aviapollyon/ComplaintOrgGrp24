@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Pending Actions — Admin{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-4">
+  <div>
+    <h4 class="mb-1 fw-bold">
+      <i class="bi bi-hourglass-split me-2 text-warning"></i>Pending Actions
+      <span class="badge bg-warning text-dark ms-2">{{ escalation_requests|length + reassignment_requests|length + reopen_requests|length }}</span>
+    </h4>
+    <p class="text-muted mb-0 small">Escalation, reassignment, and reopen requests awaiting admin review.</p>
+  </div>
+  <a href="{{ url_for('admin.dashboard') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+  </a>
+</div>
+
+<div class="row g-4">
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-warning text-dark fw-semibold">
+        <i class="bi bi-arrow-up-right-circle me-1"></i>Escalation Requests ({{ escalation_requests|length }})
+      </div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush">
+          {% for req in escalation_requests %}
+          <a class="list-group-item list-group-item-action" href="{{ url_for('admin.ticket_detail', ticket_id=req.TicketId) }}">
+            <div class="fw-semibold small">Ticket #{{ req.TicketId }}</div>
+            <div class="small text-muted">Target: {{ req.target_dept.Name if req.target_dept else '—' }}</div>
+            <div class="small text-muted">{{ req.CreatedAt.strftime('%d %b %Y %H:%M') }}</div>
+          </a>
+          {% else %}
+          <div class="list-group-item small text-muted">No pending escalation requests.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-info text-white fw-semibold">
+        <i class="bi bi-person-fill-up me-1"></i>Reassignment Requests ({{ reassignment_requests|length }})
+      </div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush">
+          {% for req in reassignment_requests %}
+          <a class="list-group-item list-group-item-action" href="{{ url_for('admin.ticket_detail', ticket_id=req.TicketId) }}">
+            <div class="fw-semibold small">Ticket #{{ req.TicketId }}</div>
+            <div class="small text-muted">Target: {{ req.target_staff.FullName if req.target_staff else '—' }}</div>
+            <div class="small text-muted">{{ req.CreatedAt.strftime('%d %b %Y %H:%M') }}</div>
+          </a>
+          {% else %}
+          <div class="list-group-item small text-muted">No pending reassignment requests.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card border-0 shadow-sm h-100">
+      <div class="card-header bg-secondary text-white fw-semibold">
+        <i class="bi bi-arrow-counterclockwise me-1"></i>Reopen Requests ({{ reopen_requests|length }})
+      </div>
+      <div class="card-body p-0">
+        <div class="list-group list-group-flush">
+          {% for req in reopen_requests %}
+          <a class="list-group-item list-group-item-action" href="{{ url_for('admin.ticket_detail', ticket_id=req.TicketId) }}">
+            <div class="fw-semibold small">Ticket #{{ req.TicketId }}</div>
+            <div class="small text-muted">Student: {{ req.student.FullName if req.student else '—' }}</div>
+            <div class="small text-muted">{{ req.CreatedAt.strftime('%d %b %Y %H:%M') }}</div>
+          </a>
+          {% else %}
+          <div class="list-group-item small text-muted">No pending reopen requests.</div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

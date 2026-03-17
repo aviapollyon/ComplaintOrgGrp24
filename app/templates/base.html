@@ -25,14 +25,22 @@
 
     {# Brand #}
     <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('auth.index') }}">
-      <div class="brand-badge"><i class="bi bi-shield-check-fill"></i></div>
-      <span class="fw-bold d-none d-sm-inline">DUT <span class="brand-accent">Portal</span></span>
+      <span class="fw-bold d-none d-sm-inline">Complaint <span class="brand-accent">Org</span></span>
     </a>
 
     {# Always-visible controls (mobile header) #}
     <div class="d-flex align-items-center gap-1 ms-auto">
       {% if current_user.is_authenticated %}
         {% if current_user.Role.value == 'Admin' %}
+        <a class="btn-nav-icon position-relative d-lg-none"
+           href="{{ url_for('admin.pending_actions') }}" title="Pending Actions">
+          <i class="bi bi-hourglass-split"></i>
+          {% if pending_actions_count > 0 %}
+          <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" style="font-size:.6rem;min-width:1.1rem;">
+            {{ pending_actions_count if pending_actions_count < 100 else '99+' }}
+          </span>
+          {% endif %}
+        </a>
         <a class="btn-nav-icon position-relative d-lg-none"
            href="{{ url_for('admin.notifications') }}" title="System Notifications">
           <i class="bi bi-bell-fill"></i>
@@ -95,6 +103,7 @@
           {% elif current_user.Role.value == 'Admin' %}
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="bi bi-grid me-1"></i>Overview</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.recurring_issues') }}"><i class="bi bi-flag-fill me-1"></i>Recurring</a></li>
+            <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.pending_actions') }}"><i class="bi bi-hourglass-split me-1"></i>Pending</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.users') }}"><i class="bi bi-people me-1"></i>Users</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.tickets') }}"><i class="bi bi-ticket-detailed me-1"></i>Tickets</a></li>
             <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.departments') }}"><i class="bi bi-building me-1"></i>Depts</a></li>
@@ -120,6 +129,16 @@
           </li>
 
           {% if current_user.Role.value == 'Admin' %}
+          <li class="nav-item">
+            <a class="btn-nav-icon position-relative" href="{{ url_for('admin.pending_actions') }}" title="Pending Actions">
+              <i class="bi bi-hourglass-split"></i>
+              {% if pending_actions_count > 0 %}
+                <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-warning text-dark" style="font-size:.6rem;min-width:1.1rem;">
+                  {{ pending_actions_count if pending_actions_count < 100 else '99+' }}
+                </span>
+              {% endif %}
+            </a>
+          </li>
           <li class="nav-item">
             <a class="btn-nav-icon position-relative" href="{{ url_for('admin.notifications') }}" title="System Notifications">
               <i class="bi bi-bell-fill"></i>

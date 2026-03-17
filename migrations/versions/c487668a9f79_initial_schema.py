@@ -1,8 +1,8 @@
-"""baseline social and sla features
+"""Initial schema
 
-Revision ID: a2cdd592e0d9
+Revision ID: c487668a9f79
 Revises: 
-Create Date: 2026-03-12 13:14:58.520720
+Create Date: 2026-03-17 11:05:06.164704
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'a2cdd592e0d9'
+revision = 'c487668a9f79'
 down_revision = None
 branch_labels = None
 depends_on = None

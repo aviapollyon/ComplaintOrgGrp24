@@ -2,44 +2,143 @@
 {% block title %}Register — DUT Grievance Portal{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-6">
-    <div class="card shadow-sm">
-      <div class="card-body p-4">
-        <h4 class="card-title mb-4 text-center">
-          <i class="bi bi-person-plus me-2 text-primary"></i>Create Account
-        </h4>
-        <form method="POST" action="{{ url_for('auth.register') }}">
+<section class="auth-modern-shell">
+  <div class="row g-4 align-items-stretch">
+    <div class="col-lg-7">
+      <div class="auth-modern-hero h-100">
+        <div class="auth-modern-badge">Secure Account Setup</div>
+        <h1 class="auth-modern-title">Create your ComplaintOrg access profile.</h1>
+        <p class="auth-modern-subtitle">
+          Register as Student, Staff, or Admin with the correct DUT domain and start
+          managing complaints in a structured, traceable workflow.
+        </p>
+        <div class="row g-3 mt-1">
+          <div class="col-sm-6">
+            <div class="auth-feature-card">
+              <i class="bi bi-person-badge"></i>
+              <div>
+                <h6>Role-Based Access</h6>
+                <p>Dashboards and permissions adjust to your selected role automatically.</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="auth-feature-card">
+              <i class="bi bi-envelope-check"></i>
+              <div>
+                <h6>Domain Validation</h6>
+                <p>Registration enforces institution-approved domains by role.</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="auth-feature-card">
+              <i class="bi bi-lock"></i>
+              <div>
+                <h6>Strong Password Policy</h6>
+                <p>Secure-by-default password requirements protect account access.</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="auth-feature-card">
+              <i class="bi bi-file-earmark-check"></i>
+              <div>
+                <h6>POPIA Compliance</h6>
+                <p>Consent is captured during registration before any account is created.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="auth-modern-form h-100">
+        <h3 class="auth-form-title mb-1">Create account</h3>
+        <p class="auth-form-sub mb-4">Complete all required fields to start using the portal.</p>
+
+        <form method="POST" action="{{ url_for('auth.register') }}" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
 
           <div class="mb-3">
-            <label class="form-label">Full Name</label>
-            <input type="text" name="full_name" class="form-control" required/>
+            <label class="form-label fw-semibold small">Full Name</label>
+            <div class="input-icon-wrap">
+              <i class="bi bi-person input-icon"></i>
+              <input type="text" name="full_name" class="form-control" placeholder="Your full name" value="{{ request.form.get('full_name', '') }}" required autofocus/>
+            </div>
           </div>
 
           <div class="mb-3">
-            <label class="form-label">Email address</label>
-            <input type="email" name="email" class="form-control" required/>
-            <div class="form-text">Use your @dut4life.ac.za student email.</div>
+            <label class="form-label fw-semibold small">Role</label>
+            <select id="role" name="role" class="form-select" required>
+              <option value="Student" {% if request.form.get('role', 'Student') == 'Student' %}selected{% endif %}>Student</option>
+              <option value="Staff" {% if request.form.get('role') == 'Staff' %}selected{% endif %}>Staff</option>
+              <option value="Admin" {% if request.form.get('role') == 'Admin' %}selected{% endif %}>Admin</option>
+            </select>
+            <div id="role-domain-hint" class="form-text">Required domain for Student: @dut4life.ac.za</div>
           </div>
 
           <div class="mb-3">
-            <label class="form-label">Password</label>
-            <input type="password" name="password" class="form-control" required/>
+            <label class="form-label fw-semibold small">Email address</label>
+            <div class="input-icon-wrap">
+              <i class="bi bi-envelope input-icon"></i>
+              <input id="email" type="email" name="email" class="form-control" placeholder="name@dut4life.ac.za" value="{{ request.form.get('email', '') }}" required/>
+            </div>
           </div>
 
-          <div class="mb-4">
-            <div class="form-text">All accounts created through this page are Student accounts.</div>
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Password</label>
+            <div class="input-icon-wrap">
+              <i class="bi bi-lock input-icon"></i>
+              <input type="password" name="password" class="form-control" placeholder="Create a strong password" required/>
+            </div>
+          </div>
+          <div class="form-text mb-3">
+            Password requirements: at least 8 characters, 1 uppercase letter, 1 lowercase letter,
+            1 number, and 1 special character.
           </div>
 
-          <button type="submit" class="btn btn-primary w-100">Register</button>
+          <div class="auth-popia-box mb-4">
+            <div class="form-check">
+              <input class="form-check-input" type="checkbox" value="1" id="popia_agree" name="popia_agree" {% if request.form.get('popia_agree') == '1' %}checked{% endif %} required>
+              <label class="form-check-label small" for="popia_agree">
+                I acknowledge and agree to the POPIA compliance statement for lawful data processing,
+                secure storage, and complaint management within the DUT Grievance Portal.
+              </label>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+            <i class="bi bi-person-plus me-2"></i>Create Account
+          </button>
         </form>
-        <hr/>
+
+        <hr class="my-4"/>
         <p class="text-center mb-0 small">
-          Already have an account? <a href="{{ url_for('auth.login') }}">Login here</a>
+          Already registered?
+          <a href="{{ url_for('auth.login') }}" class="fw-semibold">Sign in here</a>
         </p>
       </div>
     </div>
   </div>
-</div>
+</section>
+
+<script>
+  (function () {
+    var roleSelect = document.getElementById('role');
+    var emailInput = document.getElementById('email');
+    var hint = document.getElementById('role-domain-hint');
+
+    function applyRoleHints() {
+      var role = roleSelect.value;
+      var domain = role === 'Student' ? '@dut4life.ac.za' : '@dut.ac.za';
+      hint.textContent = 'Required domain for ' + role + ': ' + domain;
+      emailInput.placeholder = 'name' + domain;
+    }
+
+    roleSelect.addEventListener('change', applyRoleHints);
+    applyRoleHints();
+  })();
+</script>
 {% endblock %}

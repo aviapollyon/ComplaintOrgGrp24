@@ -42,11 +42,17 @@ from app.forms.student_forms  import (
 student_bp = Blueprint('student', __name__)
 
 
+def _resolve_view_mode(default='list'):
+    mode = request.args.get('view', default, type=str).strip().lower()
+    return mode if mode in ('list', 'compact') else default
+
+
 @student_bp.route('/dashboard')
 @login_required
 @role_required('Student')
 def dashboard():
     filter_form = TicketFilterForm(request.args)
+    view_mode = _resolve_view_mode('list')
     query       = Ticket.query.filter_by(StudentId=current_user.UserId)
 
     if filter_form.status.data:
@@ -95,7 +101,11 @@ def dashboard():
 
     return render_template(
         'student/dashboard.html',
-        tickets=tickets, pagination=pagination, filter_form=filter_form, stats=stats
+        tickets=tickets,
+        pagination=pagination,
+        filter_form=filter_form,
+        stats=stats,
+        view_mode=view_mode,
     )
 
 
@@ -103,11 +113,44 @@ def dashboard():
 @login_required
 @role_required('Student')
 def community():
+    filter_form = TicketFilterForm(request.args)
+    view_mode = _resolve_view_mode('compact')
+    community_query = Ticket.query.filter(Ticket.StudentId != current_user.UserId)
+
+    if filter_form.status.data:
+        try:
+            community_query = community_query.filter(
+                Ticket.Status == StatusEnum(filter_form.status.data)
+            )
+        except ValueError:
+            pass
+    if filter_form.priority.data:
+        try:
+            community_query = community_query.filter(
+                Ticket.Priority == PriorityEnum(filter_form.priority.data)
+            )
+        except ValueError:
+            pass
+    if filter_form.category.data:
+        community_query = community_query.filter(Ticket.Category == filter_form.category.data)
+    if filter_form.sub_category.data:
+        community_query = community_query.filter(Ticket.SubCategory == filter_form.sub_category.data)
+    if filter_form.search.data:
+        s = filter_form.search.data.strip()
+        community_query = community_query.filter(
+            db.or_(
+                Ticket.Title.ilike(f'%{s}%'),
+                Ticket.TrackingRef.ilike(f'%{s}%'),
+            )
+        )
+
+    community_query = apply_sort(community_query, filter_form.sort.data or 'newest')
     page = request.args.get('page', 1, type=int)
-    community_query = (Ticket.query
-                       .filter(Ticket.StudentId != current_user.UserId)
-                       .order_by(Ticket.CreatedAt.desc()))
-    pagination = community_query.paginate(page=page, per_page=12, error_out=False)
+    try:
+        per_page = int(filter_form.per_page.data or current_app.config.get('TICKETS_PER_PAGE', 15))
+    except (ValueError, TypeError):
+        per_page = current_app.config.get('TICKETS_PER_PAGE', 15)
+    pagination = community_query.paginate(page=page, per_page=per_page, error_out=False)
 
     my_ticket_votes = {
         v.TicketId for v in TicketVote.query.filter_by(UserId=current_user.UserId).all()
@@ -118,7 +161,8 @@ def community():
         tickets=pagination.items,
         pagination=pagination,
         my_ticket_votes=my_ticket_votes,
-        comment_form=TicketCommentForm(),
+        filter_form=filter_form,
+        view_mode=view_mode,
     )
 
 
@@ -181,7 +225,7 @@ def submit_ticket():
             Category     = form.category.data,
             SubCategory  = form.sub_category.data,
             # Staff sets final priority after investigation.
-            Priority     = PriorityEnum.Medium,
+            Priority     = None,
             Status       = StatusEnum.Submitted,
             CreatedAt    = datetime.utcnow(),
             UpdatedAt    = datetime.utcnow(),
@@ -319,6 +363,12 @@ def vote_ticket(ticket_id):
 def add_ticket_comment(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
     form = TicketCommentForm()
+
+    detail_path = url_for('student.view_ticket', ticket_id=ticket_id)
+    referrer = request.referrer or ''
+    if request.form.get('from_detail') != '1' or detail_path not in referrer:
+        flash('Open the ticket details page to comment.', 'warning')
+        return redirect(url_for('student.view_ticket', ticket_id=ticket_id))
 
     if ticket.StudentId == current_user.UserId:
         flash('Use the activity thread for your own ticket.', 'warning')

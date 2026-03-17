@@ -2,31 +2,97 @@
 {% block title %}Login — DUT Grievance Portal{% endblock %}
 
 {% block content %}
-<div class="row justify-content-center">
-  <div class="col-md-5">
-    <div class="card shadow-sm">
-      <div class="card-body p-4">
-        <h4 class="card-title mb-4 text-center">
-          <i class="bi bi-box-arrow-in-right me-2 text-primary"></i>Sign In
-        </h4>
-        <form method="POST" action="{{ url_for('auth.login') }}">
+<section class="auth-modern-shell">
+  <div class="row g-4 align-items-stretch">
+    <div class="col-lg-7">
+      <div class="auth-modern-hero h-100">
+        <div class="auth-modern-badge">DUT ComplaintOrg</div>
+        <h1 class="auth-modern-title">Resolve student issues faster, with accountability.</h1>
+        <p class="auth-modern-subtitle">
+          Centralized complaint tracking for students, staff, and administrators with
+          transparent workflows, strict auditability, and POPIA-ready handling.
+        </p>
+        <div class="row g-3 mt-1">
+          <div class="col-sm-6">
+            <div class="auth-feature-card">
+              <i class="bi bi-speedometer2"></i>
+              <div>
+                <h6>Live Status Visibility</h6>
+                <p>Track each complaint from submission to closure with clear ownership.</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="auth-feature-card">
+              <i class="bi bi-shield-check"></i>
+              <div>
+                <h6>POPIA-Aware Workflow</h6>
+                <p>Consent capture and controlled access are built into account onboarding.</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="auth-feature-card">
+              <i class="bi bi-diagram-3"></i>
+              <div>
+                <h6>Escalation Intelligence</h6>
+                <p>Recurring issues and pending actions are highlighted for rapid intervention.</p>
+              </div>
+            </div>
+          </div>
+          <div class="col-sm-6">
+            <div class="auth-feature-card">
+              <i class="bi bi-chat-dots"></i>
+              <div>
+                <h6>Collaborative Resolution</h6>
+                <p>Community voting and threaded updates improve communication quality.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-5">
+      <div class="auth-modern-form h-100">
+        <h3 class="auth-form-title mb-1">Sign in</h3>
+        <p class="auth-form-sub mb-4">Access your dashboard using your registered DUT email.</p>
+
+        <form method="POST" action="{{ url_for('auth.login') }}" novalidate>
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+
           <div class="mb-3">
-            <label class="form-label">Email address</label>
-            <input type="email" name="email" class="form-control" required autofocus/>
+            <label class="form-label fw-semibold small">Email address</label>
+            <div class="input-icon-wrap">
+              <i class="bi bi-envelope input-icon"></i>
+              <input type="email" name="email" class="form-control" placeholder="name@dut4life.ac.za or name@dut.ac.za" required autofocus/>
+            </div>
           </div>
-          <div class="mb-3">
-            <label class="form-label">Password</label>
-            <input type="password" name="password" class="form-control" required/>
+
+          <div class="mb-2">
+            <label class="form-label fw-semibold small">Password</label>
+            <div class="input-icon-wrap">
+              <i class="bi bi-lock input-icon"></i>
+              <input type="password" name="password" class="form-control" placeholder="Enter your password" required/>
+            </div>
           </div>
-          <button type="submit" class="btn btn-primary w-100">Login</button>
+
+          <div class="d-flex justify-content-end mb-4">
+            <a href="{{ url_for('auth.forgot_password') }}" class="small fw-semibold text-decoration-none">Forgot password?</a>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-2 fw-semibold">
+            <i class="bi bi-box-arrow-in-right me-2"></i>Sign In
+          </button>
         </form>
-        <hr/>
+
+        <hr class="my-4"/>
         <p class="text-center mb-0 small">
-          Don't have an account? <a href="{{ url_for('auth.register') }}">Register here</a>
+          Need an account?
+          <a href="{{ url_for('auth.register') }}" class="fw-semibold">Register now</a>
         </p>
       </div>
     </div>
   </div>
-</div>
+</section>
 {% endblock %}

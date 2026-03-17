@@ -44,8 +44,7 @@ class Ticket(db.Model):
     Category        = db.Column(db.String(100), nullable=False)
     SubCategory     = db.Column(db.String(100), nullable=True)
     TrackingRef     = db.Column(db.String(20),  nullable=True, unique=True, index=True)
-    Priority        = db.Column(db.Enum(PriorityEnum), nullable=False,
-                                default=PriorityEnum.Medium)
+    Priority        = db.Column(db.Enum(PriorityEnum), nullable=True)
     Status          = db.Column(db.Enum(StatusEnum), nullable=False,
                                 default=StatusEnum.Submitted)
     CreatedAt       = db.Column(db.DateTime, default=datetime.utcnow)

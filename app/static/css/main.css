@@ -279,16 +279,291 @@ html { scroll-behavior: smooth; }
 ::selection { background: #3b82f620; }
 [data-bs-theme="dark"] ::selection { background: #60a5fa30; }
 
-/* ── Dark mode readability fixes for activity/message blocks ───────────── */
+/* ── Dark mode readability fixes ────────────────────────────────────────── */
+/* In dark mode, .bg-light should map to a subtle dark surface (not white) */
 [data-bs-theme="dark"] .bg-light {
-  background-color: #e5e7eb !important;
-  color: #111 !important;
+  background-color: #1e2533 !important;
+  color: inherit !important;
 }
 
 [data-bs-theme="dark"] .text-muted {
-  color: #111 !important;
+  color: #94a3b8 !important;
 }
 
 [data-bs-theme="dark"] .form-text {
-  color: #111 !important;
+  color: #94a3b8 !important;
+}
+
+/* ── Page header section ─────────────────────────────────────────────────── */
+.page-header {
+  padding-bottom: 1rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.page-header h3,
+.page-header h4 {
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+/* ── Enhanced stat cards ─────────────────────────────────────────────────── */
+.stat-card .card-body {
+  padding: 1.1rem 1.25rem;
+}
+
+.stat-card .stat-value {
+  font-size: 1.9rem;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.stat-card .stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  margin-top: 0.25rem;
+}
+
+/* ── Auth split layout ───────────────────────────────────────────────────── */
+.auth-split {
+  min-height: 100vh;
+  display: flex;
+  align-items: stretch;
+}
+
+.auth-split-hero {
+  background: linear-gradient(160deg, #0f2044 0%, #1a3a6b 50%, #1e4d8c 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2.5rem;
+  color: #fff;
+}
+
+.auth-split-hero .hero-logo {
+  width: 72px;
+  height: 72px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
+}
+
+.auth-split-hero h2 {
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.75rem;
+}
+
+.auth-split-hero .hero-feature {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0;
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.auth-split-hero .hero-feature i {
+  color: #60a5fa;
+  font-size: 1.1rem;
+  flex-shrink: 0;
+}
+
+.auth-split-form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem 2rem;
+  background: var(--bs-body-bg);
+}
+
+.auth-split-form .auth-form-inner {
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-split-form .auth-form-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.4rem;
+}
+
+.auth-split-form .auth-form-sub {
+  color: var(--bs-secondary-color);
+  font-size: 0.875rem;
+  margin-bottom: 1.75rem;
+}
+
+/* Input groups with icons */
+.input-icon-wrap {
+  position: relative;
+}
+
+.input-icon-wrap .form-control {
+  padding-left: 2.5rem;
+}
+
+.input-icon-wrap .input-icon {
+  position: absolute;
+  left: 0.75rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--bs-secondary-color);
+  pointer-events: none;
+  font-size: 1rem;
+  z-index: 5;
+}
+
+/* ── Notification list ───────────────────────────────────────────────────── */
+.notif-item {
+  transition: background-color 0.15s;
+  border-radius: 0.5rem;
+}
+
+.notif-item:hover {
+  background-color: var(--bs-tertiary-bg);
+}
+
+/* ── Table improvements ──────────────────────────────────────────────────── */
+.table > :not(caption) > * > * {
+  padding-top: 0.65rem;
+  padding-bottom: 0.65rem;
+}
+
+/* ── Filter card ─────────────────────────────────────────────────────────── */
+.filter-card {
+  background: var(--bs-tertiary-bg);
+  border-radius: 0.75rem;
+  border: 1px solid var(--bs-border-color);
+}
+
+/* ── Auth modern layout ─────────────────────────────────────────────────── */
+.auth-modern-shell {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+
+.auth-modern-hero {
+  background: linear-gradient(155deg, #12284c 0%, #1a3f6f 55%, #25558e 100%);
+  border-radius: 1rem;
+  padding: 2.25rem;
+  color: #f8fbff;
+  box-shadow: 0 18px 48px rgba(10, 28, 56, 0.28);
+}
+
+.auth-modern-badge {
+  display: inline-block;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  font-weight: 700;
+  margin-bottom: 1rem;
+}
+
+.auth-modern-title {
+  font-size: clamp(1.7rem, 2.4vw, 2.35rem);
+  line-height: 1.15;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin-bottom: 0.9rem;
+}
+
+.auth-modern-subtitle {
+  color: rgba(248, 251, 255, 0.86);
+  max-width: 58ch;
+  margin-bottom: 1.25rem;
+}
+
+.auth-feature-card {
+  display: flex;
+  gap: 0.75rem;
+  height: 100%;
+  border-radius: 0.8rem;
+  padding: 0.85rem;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.auth-feature-card i {
+  font-size: 1.2rem;
+  color: #9ed0ff;
+  margin-top: 0.1rem;
+}
+
+.auth-feature-card h6 {
+  margin: 0 0 0.15rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.auth-feature-card p {
+  margin: 0;
+  font-size: 0.78rem;
+  color: rgba(248, 251, 255, 0.85);
+}
+
+.auth-modern-form {
+  border-radius: 1rem;
+  background: var(--bs-body-bg);
+  border: 1px solid var(--bs-border-color);
+  padding: 2rem;
+  box-shadow: 0 14px 30px rgba(18, 37, 63, 0.08);
+}
+
+[data-bs-theme="dark"] .auth-modern-form {
+  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.4);
+}
+
+.auth-popia-box {
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-tertiary-bg);
+  border-radius: 0.75rem;
+  padding: 0.85rem;
+}
+
+/* ── List/table visual polish ───────────────────────────────────────────── */
+.table-responsive {
+  border-radius: 0.8rem;
+}
+
+.table thead th {
+  background-color: var(--bs-tertiary-bg);
+  border-bottom: 1px solid var(--bs-border-color);
+}
+
+.table tbody tr td {
+  vertical-align: middle;
+}
+
+.table tbody tr:hover {
+  background: color-mix(in srgb, var(--bs-primary) 4%, transparent);
+}
+
+.btn-group-sm > .btn {
+  font-weight: 600;
+}
+
+@media (max-width: 991.98px) {
+  .auth-modern-hero {
+    padding: 1.4rem;
+  }
+
+  .auth-modern-form {
+    padding: 1.35rem;
+  }
 }

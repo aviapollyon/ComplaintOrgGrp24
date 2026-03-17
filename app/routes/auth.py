@@ -1,13 +1,88 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request
+from flask import Blueprint, render_template, redirect, url_for, flash, request, current_app
 from flask_login import login_user, logout_user, login_required, current_user
 from datetime import datetime
+from flask_mail import Message
+from itsdangerous import URLSafeTimedSerializer, BadSignature, SignatureExpired
 from app import db
 from app.models.user import User, RoleEnum
 from app.utils.helpers import log_audit
+from app import mail
 
 # Blueprint for authentication-related routes
 auth_bp = Blueprint('auth', __name__)
 STUDENT_EMAIL_DOMAIN = '@dut4life.ac.za'
+STAFF_ADMIN_EMAIL_DOMAIN = '@dut.ac.za'
+
+
+def _password_requirement_error(password: str):
+    if len(password) < 8:
+        return 'Password must be at least 8 characters long.'
+    if not any(c.isupper() for c in password):
+        return 'Password must include at least one uppercase letter.'
+    if not any(c.islower() for c in password):
+        return 'Password must include at least one lowercase letter.'
+    if not any(c.isdigit() for c in password):
+        return 'Password must include at least one number.'
+    if not any(not c.isalnum() for c in password):
+        return 'Password must include at least one special character.'
+    return None
+
+
+def _required_domain_for_role(role: RoleEnum) -> str:
+    return STUDENT_EMAIL_DOMAIN if role == RoleEnum.Student else STAFF_ADMIN_EMAIL_DOMAIN
+
+
+def _email_matches_role_domain(email: str, role: RoleEnum) -> bool:
+    return email.endswith(_required_domain_for_role(role))
+
+
+def _token_serializer() -> URLSafeTimedSerializer:
+    return URLSafeTimedSerializer(current_app.config['SECRET_KEY'])
+
+
+def _build_reset_token(user: User) -> str:
+    # Embed a password hash marker so old reset links become invalid after a password change.
+    payload = {'uid': user.UserId, 'phm': user.PasswordHash[-16:]}
+    return _token_serializer().dumps(payload, salt='password-reset')
+
+
+def _resolve_reset_user(token: str):
+    max_age = int(current_app.config.get('RESET_TOKEN_TTL_SECONDS', 3600))
+    try:
+        payload = _token_serializer().loads(token, salt='password-reset', max_age=max_age)
+    except SignatureExpired:
+        return None, 'This reset link has expired. Please request a new one.'
+    except BadSignature:
+        return None, 'This reset link is invalid. Please request a new one.'
+
+    user = User.query.get(payload.get('uid'))
+    if not user:
+        return None, 'This reset link is invalid. Please request a new one.'
+
+    if payload.get('phm') != user.PasswordHash[-16:]:
+        return None, 'This reset link is no longer valid. Please request a new one.'
+
+    return user, None
+
+
+def _send_password_reset_email(user: User, token: str):
+    reset_link = url_for('auth.reset_password', token=token, _external=True)
+    body = (
+        f'Hello {user.FullName},\n\n'
+        'We received a request to reset your DUT Grievance Portal password.\n\n'
+        f'Reset your password: {reset_link}\n\n'
+        f'This link expires in {int(current_app.config.get("RESET_TOKEN_TTL_SECONDS", 3600)) // 60} minutes.\n'
+        'If you did not request this, you can ignore this message.\n'
+    )
+    try:
+        msg = Message(
+            subject='[DUT Grievance Portal] Password Reset Request',
+            recipients=[user.Email],
+            body=body,
+        )
+        mail.send(msg)
+    except Exception:
+        current_app.logger.exception('Failed sending password reset email to %s', user.Email)
 
 
 # Home/index route: redirect authenticated users to their dashboard, otherwise to login
@@ -65,7 +140,7 @@ def login():
             db.session.commit()
             flash('Logged in successfully.', 'success')
 
-            # Students who haven't given POPIA consent are redirected to the consent page
+            # Legacy users may still need to provide POPIA consent.
             if user.Role == RoleEnum.Student and not user.POPIAConsent:
                 return redirect(url_for('auth.popia_consent'))
             
@@ -88,13 +163,31 @@ def register():
         full_name   = request.form.get('full_name', '').strip()
         email       = request.form.get('email', '').strip().lower()
         password    = request.form.get('password', '')
+        role_raw    = request.form.get('role', 'Student').strip()
+        popia_agree = request.form.get('popia_agree') == '1'
 
-        if not full_name or not email or not password:
+        if not full_name or not email or not password or not role_raw:
             flash('Please complete all required fields.', 'danger')
             return render_template('auth/register.html')
 
-        if not email.endswith(STUDENT_EMAIL_DOMAIN):
-            flash('Registration requires a valid DUT4Life email address.', 'danger')
+        if role_raw not in RoleEnum.__members__:
+            flash('Please choose a valid role.', 'danger')
+            return render_template('auth/register.html')
+
+        role = RoleEnum[role_raw]
+        required_domain = _required_domain_for_role(role)
+
+        if not _email_matches_role_domain(email, role):
+            flash(f'{role.value} registration requires an email ending with {required_domain}.', 'danger')
+            return render_template('auth/register.html')
+
+        password_error = _password_requirement_error(password)
+        if password_error:
+            flash(password_error, 'danger')
+            return render_template('auth/register.html')
+
+        if not popia_agree:
+            flash('You must accept the POPIA compliance statement to create an account.', 'danger')
             return render_template('auth/register.html')
 
         # Collision query mapping check ensuring no duplicate emails enter the system
@@ -106,8 +199,10 @@ def register():
         user = User(
             FullName     = full_name,
             Email        = email,
-            Role         = RoleEnum.Student,
+            Role         = role,
             DepartmentId = None,
+            POPIAConsent = True,
+            POPIAConsentAt = datetime.utcnow(),
         )
         
         # Invoke User Model functionality that permanently encrypts passwords behind werkzeug_security hashes   
@@ -122,6 +217,60 @@ def register():
 
     # Deliver view-state render configuration for users navigating into the web portal registration area
     return render_template('auth/register.html')
+
+
+@auth_bp.route('/forgot-password', methods=['GET', 'POST'])
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(url_for('auth.index'))
+
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        user = User.query.filter_by(Email=email).first()
+        if user and user.IsActive:
+            token = _build_reset_token(user)
+            _send_password_reset_email(user, token)
+
+        # Return a generic response to avoid account enumeration.
+        flash(
+            'If an active account exists for that email, a password reset link has been sent.',
+            'info',
+        )
+        return redirect(url_for('auth.login'))
+
+    return render_template('auth/forgot_password.html')
+
+
+@auth_bp.route('/reset-password/<token>', methods=['GET', 'POST'])
+def reset_password(token):
+    if current_user.is_authenticated:
+        return redirect(url_for('auth.index'))
+
+    user, error = _resolve_reset_user(token)
+    if error:
+        flash(error, 'danger')
+        return redirect(url_for('auth.forgot_password'))
+
+    if request.method == 'POST':
+        password = request.form.get('password', '')
+        confirm = request.form.get('confirm_password', '')
+
+        if password != confirm:
+            flash('Passwords do not match.', 'danger')
+            return render_template('auth/reset_password.html', token=token)
+
+        password_error = _password_requirement_error(password)
+        if password_error:
+            flash(password_error, 'danger')
+            return render_template('auth/reset_password.html', token=token)
+
+        user.set_password(password)
+        user.UpdatedAt = datetime.utcnow()
+        db.session.commit()
+        flash('Your password has been reset. You can now sign in.', 'success')
+        return redirect(url_for('auth.login'))
+
+    return render_template('auth/reset_password.html', token=token)
 
 
 # Logout route: logs out the current user

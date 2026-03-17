@@ -13,6 +13,10 @@
     <p class="text-muted mb-0 small">Welcome back, <strong>{{ current_user.FullName }}</strong></p>
   </div>
   <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('admin.pending_actions') }}" class="btn btn-outline-warning btn-sm">
+      <i class="bi bi-hourglass-split me-1"></i>Pending Actions
+      {% if pending_actions_count %}<span class="badge bg-warning text-dark ms-1">{{ pending_actions_count }}</span>{% endif %}
+    </a>
     <a href="{{ url_for('admin.tickets') }}" class="btn btn-outline-primary btn-sm">
       <i class="bi bi-ticket-detailed me-1"></i>All Tickets
     </a>
@@ -99,7 +103,9 @@
               </td>
               <td>{{ status_badge(t.Status.value) }}</td>
               <td class="d-none d-md-table-cell">
-                {% if t.Priority.value == 'High' %}
+                {% if not t.Priority %}
+                  <span class="badge bg-secondary">Not Set</span>
+                {% elif t.Priority.value == 'High' %}
                   <span class="badge bg-danger">High</span>
                 {% elif t.Priority.value == 'Medium' %}
                   <span class="badge bg-warning text-dark">Medium</span>
@@ -162,6 +168,7 @@
 {# â”€â”€ Quick Links â”€â”€ #}
 <div class="row g-3">
   {% set quick = [
+    ('Pending Actions',    'admin.pending_actions', 'bi-hourglass-split',   'btn-outline-warning'),
     ('Add User',           'admin.add_user',       'bi-person-plus',      'btn-outline-primary'),
     ('Add Department',     'admin.departments',     'bi-building-add',     'btn-outline-secondary'),
     ('Recurring Issues',   'admin.recurring_issues','bi-flag-fill',        'btn-outline-danger'),

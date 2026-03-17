@@ -16,6 +16,7 @@ from app.models.user              import User, RoleEnum
 from app.models.ticket_comment    import TicketComment
 from app.models.ticket_flag       import TicketFlag, FlaggedTicket
 from app.utils.decorators         import role_required
+from app.utils.helpers            import CATEGORY_KEYWORDS
 from app.services.notifications   import (
     notify_status_update, notify_staff_reply,
     notify_ticket_resolved, notify_ticket_rejected,
@@ -34,6 +35,35 @@ _STATUS_MAP = {
     'In Progress': (StatusEnum.InProgress, UpdateStatusEnum.InProgress),
     'Rejected'   : (StatusEnum.Rejected,   UpdateStatusEnum.Rejected),
 }
+
+
+_HIGH_PRIORITY_KEYWORDS = {
+    'harassment', 'assault', 'unsafe', 'threat', 'violence', 'discrimination',
+    'abuse', 'emergency', 'medical', 'fraud', 'security', 'intimidation'
+}
+_MEDIUM_PRIORITY_KEYWORDS = {
+    'wifi', 'registration', 'result', 'grade', 'exam', 'lecturer', 'blackboard',
+    'payment', 'accommodation', 'transport', 'access', 'password', 'attendance'
+}
+
+
+def _suggest_priority(ticket: Ticket) -> str:
+    text = f"{ticket.Title or ''} {ticket.Description or ''}".lower()
+    if any(keyword in text for keyword in _HIGH_PRIORITY_KEYWORDS):
+        return 'High'
+    if any(keyword in text for keyword in _MEDIUM_PRIORITY_KEYWORDS):
+        return 'Medium'
+
+    keyword_hits = 0
+    for words in CATEGORY_KEYWORDS.values():
+        keyword_hits += sum(1 for word in words if word.lower() in text)
+    if keyword_hits >= 3:
+        return 'Medium'
+    return 'Low'
+
+
+def _priority_gate_blocked(ticket: Ticket) -> bool:
+    return ticket.Priority is None
 
 
 @staff_bp.route('/recurring-issues')
@@ -268,16 +298,36 @@ def dashboard():
 
         # Which of this staff's tickets are flagged
         flagged_ids = {
-            ft.TicketId for ft in
-            FlaggedTicket.query
+            row[0] for row in
+            db.session.query(FlaggedTicket.TicketId)
+            .join(TicketFlag, TicketFlag.FlagId == FlaggedTicket.FlagId)
             .filter(
                 FlaggedTicket.TicketId.in_(my_ticket_ids),
-                FlaggedTicket.FlagId.in_(my_flag_ids)
+                FlaggedTicket.FlagId.in_(my_flag_ids),
+                TicketFlag.Status == 'active',
             ).all()
         } if my_flag_ids else set()
+
+        ticket_active_flags = {}
+        if my_flag_ids:
+            rows = (
+                db.session.query(FlaggedTicket.TicketId, TicketFlag.FlagId)
+                .join(TicketFlag, TicketFlag.FlagId == FlaggedTicket.FlagId)
+                .filter(
+                    FlaggedTicket.TicketId.in_(my_ticket_ids),
+                    TicketFlag.Status == 'active',
+                )
+                .all()
+            )
+            for ticket_id, flag_id in rows:
+                ticket_active_flags.setdefault(ticket_id, []).append(flag_id)
     else:
         active_flags = []
         flagged_ids  = set()
+        ticket_active_flags = {}
+
+    suggested_priorities = {t.TicketId: _suggest_priority(t) for t in tickets}
+    new_ticket_ids = {t.TicketId for t in all_assigned if t.Priority is None}
 
     stats = {
         'total'       : len(all_assigned),
@@ -288,6 +338,7 @@ def dashboard():
             1 for t in all_assigned if t.is_response_sla_overdue or t.is_resolution_sla_overdue
         ),
         'avg_hours': avg_hrs,
+        'new_tickets': len(new_ticket_ids),
     }
 
     return render_template(
@@ -298,6 +349,37 @@ def dashboard():
         stats=stats,
         flagged_ticket_ids=flagged_ids,
         active_flags=active_flags,
+        ticket_active_flags=ticket_active_flags,
+        suggested_priorities=suggested_priorities,
+        new_ticket_ids=new_ticket_ids,
+    )
+
+
+@staff_bp.route('/new-tickets')
+@login_required
+@role_required('Staff')
+def new_tickets():
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 15, type=int)
+    if per_page not in (10, 15, 25, 50, 100):
+        per_page = 15
+
+    query = (
+        Ticket.query
+        .filter_by(StaffId=current_user.UserId)
+        .filter(Ticket.Priority.is_(None))
+        .order_by(Ticket.CreatedAt.desc())
+    )
+    pagination = query.paginate(page=page, per_page=per_page, error_out=False)
+    tickets = pagination.items
+
+    suggested_priorities = {t.TicketId: _suggest_priority(t) for t in tickets}
+
+    return render_template(
+        'staff/new_tickets.html',
+        tickets=tickets,
+        pagination=pagination,
+        suggested_priorities=suggested_priorities,
     )
 
 
@@ -329,7 +411,8 @@ def view_ticket(ticket_id):
     reply_form        = ReplyForm()
     thread_reply_form = StaffThreadReplyForm()
 
-    priority_form.priority.data = ticket.Priority.value
+    if ticket.Priority:
+        priority_form.priority.data = ticket.Priority.value
 
     escalation_form = EscalationRequestForm()
     other_depts     = Department.query.filter(
@@ -370,6 +453,8 @@ def view_ticket(ticket_id):
         reassign_form=reassign_form,
         pending_reassign=pending_reassign,
         locked_thread_ids=locked_thread_ids,
+        suggested_priority=_suggest_priority(ticket),
+        priority_required=_priority_gate_blocked(ticket),
     )
 
 
@@ -380,6 +465,10 @@ def update_ticket(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
     form   = UpdateTicketForm()
     if form.validate_on_submit():
+        if _priority_gate_blocked(ticket) and form.status.data == 'In Progress':
+            flash('Set ticket priority before moving status to In Progress.', 'warning')
+            return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+
         mapping = _STATUS_MAP.get(form.status.data)
         if not mapping:
             flash('Invalid status.', 'danger')
@@ -412,7 +501,7 @@ def update_ticket_priority(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
     form   = UpdatePriorityForm()
     if form.validate_on_submit():
-        old_priority = ticket.Priority.value
+        old_priority = ticket.Priority.value if ticket.Priority else 'Not Set'
         ticket.Priority = PriorityEnum(form.priority.data)
         ticket.UpdatedAt = datetime.utcnow()
         db.session.add(TicketUpdate(
@@ -459,6 +548,10 @@ def resolve_ticket(ticket_id):
 @role_required('Staff')
 def reply_ticket(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
+    if _priority_gate_blocked(ticket):
+        flash('Set ticket priority before posting internal activity updates.', 'warning')
+        return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+
     form   = ReplyForm()
     if form.validate_on_submit():
         ticket.Status    = StatusEnum.PendingInfo
@@ -482,6 +575,10 @@ def reply_ticket(ticket_id):
 @role_required('Staff')
 def thread_reply(ticket_id, update_id):
     ticket = _get_staff_ticket(ticket_id)
+    if _priority_gate_blocked(ticket):
+        flash('Set ticket priority before posting internal activity updates.', 'warning')
+        return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+
     parent = TicketUpdate.query.get_or_404(update_id)
     if parent.TicketId != ticket_id:
         abort(403)

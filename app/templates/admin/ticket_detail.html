@@ -55,7 +55,8 @@
           </div>
           <div class="col-sm-4">
             <div class="small text-muted">Priority</div>
-            {% if ticket.Priority.value == 'High' %}     <span class="badge bg-danger">High</span>
+            {% if not ticket.Priority %}                 <span class="badge bg-secondary">Not Set</span>
+            {% elif ticket.Priority.value == 'High' %}  <span class="badge bg-danger">High</span>
             {% elif ticket.Priority.value == 'Medium' %} <span class="badge bg-warning text-dark">Medium</span>
             {% else %}                                   <span class="badge bg-success">Low</span>
             {% endif %}
@@ -424,7 +425,9 @@
       <div class="card-body">
         <p class="small text-muted mb-2">
           Current:
-          {% if ticket.Priority.value == 'High' %}
+          {% if not ticket.Priority %}
+            <span class="badge bg-secondary">Not Set</span>
+          {% elif ticket.Priority.value == 'High' %}
             <span class="badge bg-danger">High</span>
           {% elif ticket.Priority.value == 'Medium' %}
             <span class="badge bg-warning text-dark">Medium</span>

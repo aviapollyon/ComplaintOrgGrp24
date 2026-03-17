@@ -6,9 +6,15 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center flex-wrap gap-2 mb-4">
   <div>
-    <h4 class="mb-1 fw-bold"><i class="bi bi-list-check text-danger me-2"></i>Flagged Tickets</h4>
+    <h4 class="mb-1 fw-bold">
+      <i class="bi bi-list-check {{ 'text-danger' if flag.Status == 'active' else 'text-success' }} me-2"></i>
+      Flagged Tickets
+    </h4>
     <p class="text-muted small mb-0">
       Recurring issue: <strong>{{ flag.Category }}</strong> / <strong>{{ flag.Keyword }}</strong>
+      {% if flag.Status != 'active' %}
+      <span class="badge bg-success ms-2">Dismissed</span>
+      {% endif %}
     </p>
   </div>
   <a href="{{ url_for('staff.recurring_issues') }}" class="btn btn-outline-secondary btn-sm">
@@ -41,7 +47,8 @@
           <td>{{ t.student.FullName if t.student else '-' }}</td>
           <td>{{ status_badge(t.Status.value) }}</td>
           <td>
-            {% if t.Priority.value == 'High' %}<span class="badge bg-danger">High</span>
+            {% if not t.Priority %}<span class="badge bg-secondary">Not Set</span>
+            {% elif t.Priority.value == 'High' %}<span class="badge bg-danger">High</span>
             {% elif t.Priority.value == 'Medium' %}<span class="badge bg-warning text-dark">Medium</span>
             {% else %}<span class="badge bg-success">Low</span>{% endif %}
           </td>

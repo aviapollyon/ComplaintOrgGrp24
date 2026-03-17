@@ -47,11 +47,15 @@ def create_app(config_name='default'):
         active_announcements = []
         admin_unread_count   = 0
         user_unread_count    = 0
+        pending_actions_count = 0
 
         if current_user.is_authenticated:
             from app.models.announcement       import Announcement
             from app.models.admin_notification import AdminNotification
             from app.models.user_notification  import UserNotification
+            from app.models.escalation import EscalationRequest
+            from app.models.reassignment_request import ReassignmentRequest
+            from app.models.reopen_request import ReopenRequest
 
             role = current_user.Role.value
 
@@ -64,6 +68,11 @@ def create_app(config_name='default'):
                 admin_unread_count = AdminNotification.query.filter_by(
                     IsRead=False
                 ).count()
+                pending_actions_count = (
+                    EscalationRequest.query.filter_by(Status='Pending').count()
+                    + ReassignmentRequest.query.filter_by(Status='Pending').count()
+                    + ReopenRequest.query.filter_by(Status='Pending').count()
+                )
 
             user_unread_count = UserNotification.query.filter_by(
                 UserId=current_user.UserId, IsRead=False
@@ -75,6 +84,7 @@ def create_app(config_name='default'):
             'active_announcements': active_announcements,
             'admin_unread_count'  : admin_unread_count,
             'user_unread_count'   : user_unread_count,
+            'pending_actions_count': pending_actions_count,
         }
 
     # ── Blueprints ────────────────────────────────────────────────────────────

@@ -4,9 +4,6 @@
 
 <div class="d-flex justify-content-between align-items-center mb-4">
   <h3 class="mb-0"><i class="bi bi-building me-2 text-primary"></i>Department Management</h3>
-  <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addDeptModal">
-    <i class="bi bi-plus-circle me-1"></i>Add Department
-  </button>
 </div>
 
 <div class="row g-4">
@@ -50,32 +47,4 @@
   {% endfor %}
 </div>
 
-<!-- Add Department Modal -->
-<div class="modal fade" id="addDeptModal" tabindex="-1">
-  <div class="modal-dialog">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Add Department</h5>
-        <button class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <form method="POST" action="{{ url_for('admin.add_department') }}" novalidate>
-        {{ add_form.hidden_tag() }}
-        <div class="modal-body">
-          <div class="mb-3">
-            {{ add_form.name.label(class="form-label fw-semibold") }}
-            {{ add_form.name(class="form-control") }}
-          </div>
-          <div class="mb-3">
-            {{ add_form.description.label(class="form-label fw-semibold") }}
-            {{ add_form.description(class="form-control") }}
-          </div>
-        </div>
-        <div class="modal-footer">
-          <button class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
-          {{ add_form.submit(class="btn btn-primary") }}
-        </div>
-      </form>
-    </div>
-  </div>
-</div>
 {% endblock %}

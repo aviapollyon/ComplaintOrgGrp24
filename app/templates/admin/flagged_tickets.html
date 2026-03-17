@@ -43,7 +43,8 @@
           <td>{{ t.staff.FullName if t.staff else 'Unassigned' }}</td>
           <td>{{ status_badge(t.Status.value) }}</td>
           <td>
-            {% if t.Priority.value == 'High' %}<span class="badge bg-danger">High</span>
+            {% if not t.Priority %}<span class="badge bg-secondary">Not Set</span>
+            {% elif t.Priority.value == 'High' %}<span class="badge bg-danger">High</span>
             {% elif t.Priority.value == 'Medium' %}<span class="badge bg-warning text-dark">Medium</span>
             {% else %}<span class="badge bg-success">Low</span>{% endif %}
           </td>
