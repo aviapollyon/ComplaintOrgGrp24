@@ -53,31 +53,28 @@ python seed_test_data.py
 
 Role: Admin
 
-System Admin | aviapollyonc@gmail.com | Admin@1234
+System Admin | aviapollyonc@gmail.com | Admin@1234<br />
 
 Role: Staff
 
-Sipho Nkosi | aviapollyon@gmail.com | Staff@1234 | Academic Affairs
-Priya Pillay | priya.pillay@dut.ac.za | Staff@1234 | Academic Affairs
-James Mokoena | james.mokoena@dut.ac.za | Staff@1234 | Finance & Accounts
-Fatima Dlamini | fatima.dlamini@dut.ac.za | Staff@1234 | Finance & Accounts
-Rajan Govender | rajan.govender@dut.ac.za | Staff@1234 | Facilities Management
-Nomsa Zulu | nomsa.zulu@dut.ac.za | Staff@1234 | Information Technology
-Thabo Sithole | thabo.sithole@dut.ac.za | Staff@1234 | Information Technology
-Linda Maharaj | linda.maharaj@dut.ac.za | Staff@1234 | Student Housing
-Mandla Khumalo | mandla.khumalo@dut.ac.za | Staff@1234 | Student Administration
+Sipho Nkosi | aviapollyon@gmail.com | Staff@1234 | Academic Affairs<br />
+Priya Pillay | priya.pillay@dut.ac.za | Staff@1234 | Academic Affairs<br />
+James Mokoena | james.mokoena@dut.ac.za | Staff@1234 | Finance & Accounts<br />
+Fatima Dlamini | fatima.dlamini@dut.ac.za | Staff@1234 | Finance & Accounts<br />
+Rajan Govender | rajan.govender@dut.ac.za | Staff@1234 | Facilities Management<br />
+Nomsa Zulu | nomsa.zulu@dut.ac.za | Staff@1234 | Information Technology<br />
+Thabo Sithole | thabo.sithole@dut.ac.za | Staff@1234 | Information Technology<br />
+Linda Maharaj | linda.maharaj@dut.ac.za | Staff@1234 | Student Housing<br />
+Mandla Khumalo | mandla.khumalo@dut.ac.za | Staff@1234 | Student Administration<br />
 
 Role: Student
 
-Ayanda Mthembu | 22218367@dut4life.ac.za | Student@1234
-Keegan Peters | keegan.example@dut4life.ac.za | Student@1234
-Zanele Ntuli | zanele.example@dut4life.ac.za | Student@1234
-Rishi Naidoo | rishi.example@dut4life.ac.za | Student@1234
-Chloe van Wyk | chloe.example@dut4life.ac.za | Student@1234
-Lethiwe Cele | lethiwe.example@dut4life.ac.za | Student@1234
-Mohammed Cassim | mohammed.example@dut4life.ac.za | Student@1234
-Tayla Botha | tayla.example@dut4life.ac.za | Student@1234
-2. All dependencies are installed (`pip install -r requirements.txt`).
-3. The database has been migrated (`flask db upgrade`).
-4. Departments have been seeded (`python seed_departments.py`).
-5. Your `.env` file exists and contains a valid `SECRET_KEY`.
+Ayanda Mthembu | 22218367@dut4life.ac.za | Student@1234<br />
+Keegan Peters | keegan.example@dut4life.ac.za | Student@1234<br />
+Zanele Ntuli | zanele.example@dut4life.ac.za | Student@1234<br />
+Rishi Naidoo | rishi.example@dut4life.ac.za | Student@1234<br />
+Chloe van Wyk | chloe.example@dut4life.ac.za | Student@1234<br />
+Lethiwe Cele | lethiwe.example@dut4life.ac.za | Student@1234<br />
+Mohammed Cassim | mohammed.example@dut4life.ac.za | Student@1234<br />
+Tayla Botha | tayla.example@dut4life.ac.za | Student@1234<br />
+
