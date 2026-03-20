@@ -69,7 +69,7 @@ Mandla Khumalo | mandla.khumalo@dut.ac.za | Staff@1234 | Student Administration<
 
 Role: Student
 
-THIS STUDENT HAS BEEN DELETED FOR SHOWCASING OF VERIFICATION SYSTEM | Ayanda Mthembu | 22218367@dut4life.ac.za | Student@1234<br />
+THIS STUDENT DELETED FOR SHOWCASING OF VERIFICATION SYSTEM | Ayanda Mthembu | 22218367@dut4life.ac.za | Student@1234<br />
 Keegan Peters | keegan.example@dut4life.ac.za | Student@1234<br />
 Zanele Ntuli | zanele.example@dut4life.ac.za | Student@1234<br />
 Rishi Naidoo | rishi.example@dut4life.ac.za | Student@1234<br />
