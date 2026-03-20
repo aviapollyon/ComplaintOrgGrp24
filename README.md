@@ -51,240 +51,32 @@ pip install -r requirements.txt #run this again just in case
 python seed_test_data.py
 ```
 
-This creates all six university departments and a default admin account:
+Role: Admin
 
-| Field | Value |
-|---|---|
-| Email | `aviapollyon@gmail.com` |
-| Password | `Admin@1234` |
+System Admin | aviapollyonc@gmail.com | Admin@1234
 
+Role: Staff
 
-### 6. Run the development server
+Sipho Nkosi | aviapollyon@gmail.com | Staff@1234 | Academic Affairs
+Priya Pillay | priya.pillay@dut.ac.za | Staff@1234 | Academic Affairs
+James Mokoena | james.mokoena@dut.ac.za | Staff@1234 | Finance & Accounts
+Fatima Dlamini | fatima.dlamini@dut.ac.za | Staff@1234 | Finance & Accounts
+Rajan Govender | rajan.govender@dut.ac.za | Staff@1234 | Facilities Management
+Nomsa Zulu | nomsa.zulu@dut.ac.za | Staff@1234 | Information Technology
+Thabo Sithole | thabo.sithole@dut.ac.za | Staff@1234 | Information Technology
+Linda Maharaj | linda.maharaj@dut.ac.za | Staff@1234 | Student Housing
+Mandla Khumalo | mandla.khumalo@dut.ac.za | Staff@1234 | Student Administration
 
-```bash
-python run.py
-```
-### 8. Login as Admin using above details and create users/staff members within desired departments, note tickets are auto assigned according to department of category
+Role: Student
 
-Visit **http://127.0.0.1:5000** in your browser.
-
----
-
-## 🔑 Environment Variables
-
-| Variable | Required | Default | Description |
-|---|---|---|---|
-| `SECRET_KEY` | ✅ | `dev-secret-key` | Flask session secret — use a long random string in production |
-| `FLASK_ENV` | ✅ | `development` | `development` or `production` |
-| `DATABASE_URL` | Production only | SQLite | Full PostgreSQL connection string |
-| `USE_CLOUDINARY` | Production only | `false` | Set `true` to enable cloud file storage |
-| `CLOUDINARY_CLOUD_NAME` | If above is true | — | Cloudinary account cloud name |
-| `CLOUDINARY_API_KEY` | If above is true | — | Cloudinary API key |
-| `CLOUDINARY_API_SECRET` | If above is true | — | Cloudinary API secret |
-
----
-
-## 🗄️ Database Setup
-
-### Development (SQLite)
-
-SQLite is used automatically — no additional setup required. The database file is created at `instance/grievance.db` on first migration.
-
-### Production (PostgreSQL)
-
-1. Create a PostgreSQL database on your cloud provider.
-2. Set the `DATABASE_URL` environment variable — most platforms (Railway, Render, Heroku) set this automatically when you add a Postgres addon.
-3. On deploy, `boot.py` runs `flask db upgrade` and seeds departments automatically.
-
-### Schema overview
-
-| Table | Description |
-|---|---|
-| `departments` | Six university departments |
-| `users` | Students, Staff, and Admins — each belongs to a department |
-| `tickets` | Grievances submitted by students |
-| `ticket_updates` | Timeline entries, staff comments, and threaded replies |
-| `attachments` | Files attached to tickets or to individual thread replies |
-
----
-
-## 👥 User Roles
-
-| Role | Access | Department |
-|---|---|---|
-| **Student** | Submit, track, reply to, and rate own tickets | Optional (faculty) |
-| **Staff** | Manage assigned tickets, reply to students, resolve tickets | Required — determines which tickets are auto-assigned |
-| **Admin** | Full system access, user management, all tickets | None |
-
-### Registering accounts
-
-- Students and Staff register via `/register` and select their department.
-- Admin accounts are created via `seed_departments.py` or directly in the database.
-- Admin registration is intentionally disabled on the public register form.
-
----
-
-## 🔄 Ticket Lifecycle
-
-```
-Submitted ──► Assigned ──► In Progress ──► Resolved
-                                │
-                                ▼
-                          Pending Info  (staff requested more info)
-                                │
-                                ▼
-                          In Progress  (student replied, staff continues)
-                                │
-                                ▼
-                            Resolved
-
-At any active stage ──► Rejected  (staff rejects OR student withdraws)
-```
-
-| Status | Set By | Meaning |
-|---|---|---|
-| **Submitted** | System | Ticket created, awaiting assignment |
-| **Assigned** | System (auto-assign) | Assigned to a staff member |
-| **In Progress** | Staff | Staff is actively working on it |
-| **Pending Info** | System (auto, on staff reply) | Staff needs more information from student |
-| **Resolved** | Staff (dedicated panel) | Issue resolved with resolution notes |
-| **Rejected** | Staff or Student | Closed without resolution / withdrawn |
-
----
-
-## 🤖 Auto-Assignment Logic
-
-When a student submits a ticket:
-
-1. The ticket's **category** determines the responsible **department**
-   (e.g. `IT Support` → `Information Technology`).
-2. All **Staff** members in that department are considered.
-3. **Available** staff = staff with fewer than **5 open** (non-resolved/rejected) tickets.
-4. If available staff exist → assigned to the one with the **fewest open tickets**.
-5. If no one is available → assigned **randomly** from all staff in the department.
-6. If the department has **no staff** → ticket remains `Submitted` for manual admin assignment.
-
-### Category → Department mapping
-
-| Category | Department |
-|---|---|
-| Academic | Academic Affairs |
-| Financial | Finance & Accounts |
-| Facilities | Facilities Management |
-| IT Support | Information Technology |
-| Accommodation | Student Housing |
-| Administration | Student Administration |
-| Other | Student Administration |
-
-### Category → Priority mapping
-
-| Category | Auto Priority |
-|---|---|
-| Academic | High |
-| Financial | High |
-| Facilities | Medium |
-| IT Support | Medium |
-| Accommodation | Medium |
-| Administration | Low |
-| Other | Low |
-
----
-
-## 📎 File Uploads
-
-### Development
-
-Files are saved to `app/static/uploads/` and served via the `/student/uploads/<path>` route.
-
-- Max file size: **5 MB** per file
-- Max files per submission: **5**
-- Allowed types: `PDF`, `PNG`, `JPG`, `JPEG`, `DOC`, `DOCX`
-
-Client-side validation warns the user immediately if limits are exceeded. Server-side validation enforces allowed file types.
-
-### Production
-
-Set `USE_CLOUDINARY=true` and configure the three Cloudinary environment variables. Files are uploaded directly to Cloudinary and stored as HTTPS URLs in the database — no local disk usage.
-
----
-
-## ☁️ Deployment
-
-The application is ready to deploy to any platform that supports Python/Flask. The recommended free-tier options are:
-
-| Platform | PostgreSQL | Notes |
-|---|---|---|
-| **Railway** | ✅ Free tier | Easiest — auto-detects Flask and Postgres |
-| **Render** | ✅ Free tier | Reliable, sleeps after 15 min inactivity on free plan |
-| **Fly.io** | ✅ Free tier | More control, slightly more setup |
-| **Heroku** | ✅ Paid | Best documented but no free tier |
-
-### Steps (Railway / Render)
-
-1. Push code to a GitHub repository.
-2. Connect the repository to your cloud platform.
-3. Add a **PostgreSQL** addon/database service.
-4. Set the following environment variables on the platform dashboard:
-
-   ```
-   FLASK_ENV=production
-   SECRET_KEY=<long-random-string>
-   DATABASE_URL=<set-automatically-by-platform>
-   USE_CLOUDINARY=true
-   CLOUDINARY_CLOUD_NAME=<your-value>
-   CLOUDINARY_API_KEY=<your-value>
-   CLOUDINARY_API_SECRET=<your-value>
-   ```
-
-5. The `Procfile` handles everything on deploy:
-   ```
-   release: python boot.py      ← runs migrations + seeds departments
-   web: gunicorn ...            ← starts the app
-   ```
-
----
-
-## ⚠️ Known Limitations
-
-| Limitation | Detail |
-|---|---|
-| No email notifications | Status change alerts are portal-only. Email (Flask-Mail + SMTP) not yet implemented. |
-| No real-time updates | The page must be refreshed to see new replies or status changes. WebSockets not implemented. |
-| Admin dashboard incomplete | User management, ticket reassignment, and reporting are planned for the next development phase. |
-| Single staff per ticket | A ticket can only be assigned to one staff member at a time. |
-| No password reset | Forgot-password / email reset flow not yet implemented. |
-
----
-
-## 🗺️ Roadmap
-
-- [x] Student dashboard (submit, track, reply, feedback)
-- [x] Staff dashboard (manage, update, resolve, thread replies)
-- [x] Department-based auto-assignment
-- [x] Threaded reply system with file attachments
-- [x] File upload validation (size + count)
-- [ ] **Admin dashboard** — user management, ticket reassignment, reports
-- [ ] Email notifications on ticket status changes
-- [ ] Password reset via email
-- [ ] Real-time notifications (WebSockets / Server-Sent Events)
-- [ ] Bulk announcement system (Admin → all students/staff)
-- [ ] Export reports to PDF / CSV
-- [ ] Mobile-responsive UI improvements
-
----
-
-## 📄 License
-
-This project was developed as an academic project for **Durban University of Technology**.  
-It is intended for educational and institutional use.
-
----
-
-## 🙋 Support
-
-If you encounter any issues running the application locally, please check:
-
-1. Your virtual environment is activated.
+Ayanda Mthembu | 22218367@dut4life.ac.za | Student@1234
+Keegan Peters | keegan.example@dut4life.ac.za | Student@1234
+Zanele Ntuli | zanele.example@dut4life.ac.za | Student@1234
+Rishi Naidoo | rishi.example@dut4life.ac.za | Student@1234
+Chloe van Wyk | chloe.example@dut4life.ac.za | Student@1234
+Lethiwe Cele | lethiwe.example@dut4life.ac.za | Student@1234
+Mohammed Cassim | mohammed.example@dut4life.ac.za | Student@1234
+Tayla Botha | tayla.example@dut4life.ac.za | Student@1234
 2. All dependencies are installed (`pip install -r requirements.txt`).
 3. The database has been migrated (`flask db upgrade`).
 4. Departments have been seeded (`python seed_departments.py`).
