@@ -10,8 +10,18 @@
   </ol>
 </nav>
 
+{% if is_restricted_view %}
+<div class="alert alert-info d-flex gap-2 align-items-start">
+  <i class="bi bi-eye-fill mt-1"></i>
+  <div>
+    <strong>Restricted ticket view.</strong><br>
+    <span class="small">You are no longer the assigned staff member. You can view this ticket and reply on open threads, but operational controls are hidden.</span>
+  </div>
+</div>
+{% endif %}
+
 <div class="row g-4">
-  <div class="col-lg-8">
+  <div class="{{ 'col-lg-12' if is_restricted_view else 'col-lg-8' }}">
 
     <!-- Ticket Info -->
     <div class="card shadow-sm border-0 mb-4">
@@ -384,6 +394,7 @@
   </div>
 
   <!-- RIGHT: Action Panels -->
+  {% if not is_restricted_view %}
   <div class="col-lg-4">
     {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
 
@@ -596,5 +607,6 @@
     </div>
     {% endif %}
   </div>
+  {% endif %}
 </div>
 {% endblock %}

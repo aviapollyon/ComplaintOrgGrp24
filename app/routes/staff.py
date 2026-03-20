@@ -443,12 +443,86 @@ def new_tickets():
     )
 
 
+@staff_bp.route('/reassigned-tickets')
+@login_required
+@role_required('Staff')
+def reassigned_tickets():
+    scope = request.args.get('scope', 'to_me', type=str).strip().lower()
+    if scope not in ('to_me', 'from_me'):
+        scope = 'to_me'
+
+    user_id = current_user.UserId
+    user_name = (current_user.FullName or '').strip()
+    items = []
+
+    approved_reassignments = (
+        ReassignmentRequest.query
+        .filter(ReassignmentRequest.Status == 'Approved')
+        .order_by(ReassignmentRequest.ResolvedAt.desc(), ReassignmentRequest.RequestId.desc())
+        .all()
+    )
+    for req in approved_reassignments:
+        if scope == 'to_me' and req.TargetStaffId != user_id:
+            continue
+        if scope == 'from_me' and req.RequestedById != user_id:
+            continue
+        items.append({
+            'ticket': req.ticket,
+            'source': 'Reassignment',
+            'resolved_at': req.ResolvedAt or req.CreatedAt,
+            'from_staff': req.requested_by.FullName if req.requested_by else 'Unknown',
+            'to_staff': req.target_staff.FullName if req.target_staff else 'Unknown',
+            'note': req.Reason,
+        })
+
+    approved_escalations = (
+        EscalationRequest.query
+        .filter(EscalationRequest.Status == 'Approved')
+        .order_by(EscalationRequest.ResolvedAt.desc(), EscalationRequest.EscalationId.desc())
+        .all()
+    )
+    for esc in approved_escalations:
+        assigned_to_me = False
+        if esc.ticket and esc.ticket.StaffId == user_id:
+            assigned_to_me = True
+        elif user_name:
+            assigned_to_me = TicketUpdate.query.filter(
+                TicketUpdate.TicketId == esc.TicketId,
+                TicketUpdate.StatusChange == UpdateStatusEnum.Assigned,
+                TicketUpdate.Comment.ilike(f'%assigned to {user_name}%'),
+            ).first() is not None
+
+        if scope == 'to_me' and not assigned_to_me:
+            continue
+        if scope == 'from_me' and esc.RequestedById != user_id:
+            continue
+
+        target_name = esc.ticket.staff.FullName if esc.ticket and esc.ticket.staff else 'Unknown'
+        items.append({
+            'ticket': esc.ticket,
+            'source': 'Escalation',
+            'resolved_at': esc.ResolvedAt or esc.CreatedAt,
+            'from_staff': esc.requested_by.FullName if esc.requested_by else 'Unknown',
+            'to_staff': target_name,
+            'note': esc.Reason,
+        })
+
+    items.sort(key=lambda row: row['resolved_at'] or datetime.min, reverse=True)
+
+    return render_template(
+        'staff/reassigned_tickets.html',
+        scope=scope,
+        items=items,
+    )
+
+
 @staff_bp.route('/ticket/<int:ticket_id>')
 @login_required
 @role_required('Staff')
 def view_ticket(ticket_id):
     from app.models.reassignment_request import ReassignmentRequest
-    ticket  = _get_staff_ticket(ticket_id)
+    ticket, access_mode = _get_staff_ticket_access(ticket_id)
+    is_restricted_view = access_mode == 'restricted'
 
     if ticket.is_response_sla_overdue:
         notify_sla_breach(ticket, 'first_response')
@@ -517,6 +591,7 @@ def view_ticket(ticket_id):
         locked_thread_ids=locked_thread_ids,
         suggested_priority=_suggest_priority(ticket),
         priority_required=_priority_gate_blocked(ticket),
+        is_restricted_view=is_restricted_view,
     )
 
 
@@ -640,8 +715,8 @@ def reply_ticket(ticket_id):
 @login_required
 @role_required('Staff')
 def thread_reply(ticket_id, update_id):
-    ticket = _get_staff_ticket(ticket_id)
-    if _priority_gate_blocked(ticket):
+    ticket, access_mode = _get_staff_ticket_access(ticket_id)
+    if access_mode == 'full' and _priority_gate_blocked(ticket):
         flash('Set ticket priority before posting internal activity updates.', 'warning')
         return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
@@ -810,7 +885,45 @@ def request_reassignment(ticket_id):
 
 
 def _get_staff_ticket(ticket_id: int) -> Ticket:
-    ticket = Ticket.query.get_or_404(ticket_id)
-    if ticket.StaffId != current_user.UserId:
+    ticket, access_mode = _get_staff_ticket_access(ticket_id)
+    if access_mode != 'full':
         abort(403)
     return ticket
+
+
+def _get_staff_ticket_access(ticket_id: int):
+    ticket = Ticket.query.get_or_404(ticket_id)
+    if ticket.StaffId == current_user.UserId:
+        return ticket, 'full'
+    if _staff_has_restricted_access(ticket):
+        return ticket, 'restricted'
+    abort(403)
+
+
+def _staff_has_restricted_access(ticket: Ticket) -> bool:
+    user_id = current_user.UserId
+
+    participated = TicketUpdate.query.filter_by(
+        TicketId=ticket.TicketId,
+        UserId=user_id,
+    ).first() is not None
+    if participated:
+        return True
+
+    reassignment_link = ReassignmentRequest.query.filter(
+        ReassignmentRequest.TicketId == ticket.TicketId,
+        ReassignmentRequest.Status == 'Approved',
+        db.or_(
+            ReassignmentRequest.RequestedById == user_id,
+            ReassignmentRequest.TargetStaffId == user_id,
+        ),
+    ).first() is not None
+    if reassignment_link:
+        return True
+
+    escalation_link = EscalationRequest.query.filter_by(
+        TicketId=ticket.TicketId,
+        Status='Approved',
+        RequestedById=user_id,
+    ).first() is not None
+    return escalation_link

@@ -79,6 +79,7 @@
       {% elif current_user.Role.value == 'Staff' %}
       <li class="nav-item"><a class="nav-link" href="{{ url_for('staff.dashboard') }}"><i class="bi bi-person-workspace nav-icon"></i><span class="nav-label">Dashboard</span></a></li>
       <li class="nav-item"><a class="nav-link" href="{{ url_for('staff.new_tickets') }}"><i class="bi bi-bell-fill nav-icon"></i><span class="nav-label">New Tickets</span></a></li>
+      <li class="nav-item"><a class="nav-link" href="{{ url_for('staff.reassigned_tickets') }}"><i class="bi bi-arrow-left-right nav-icon"></i><span class="nav-label">Reassigned</span></a></li>
       <li class="nav-item"><a class="nav-link" href="{{ url_for('staff.recurring_issues') }}"><i class="bi bi-flag-fill nav-icon"></i><span class="nav-label">Recurring Issues</span></a></li>
       {% elif current_user.Role.value == 'Admin' %}
       <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="bi bi-grid nav-icon"></i><span class="nav-label">Overview</span></a></li>

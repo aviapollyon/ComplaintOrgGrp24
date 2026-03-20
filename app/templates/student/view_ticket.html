@@ -73,7 +73,7 @@
           {% endif %}
         </div>
       </div>
-      {% if ticket.is_editable or ticket.is_withdrawable %}
+      {% if is_owner and (ticket.is_editable or ticket.is_withdrawable) %}
       <div class="card-footer bg-transparent d-flex gap-2">
         {% if ticket.is_editable %}
           <a href="{{ url_for('student.edit_ticket', ticket_id=ticket.TicketId) }}"
