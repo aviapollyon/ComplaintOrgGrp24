@@ -18,6 +18,22 @@
       <span class="badge rounded-pill text-bg-light border text-dark px-3 py-2">Total {{ pagination.total }}</span>
     </div>
 
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+      <span class="small text-muted fw-semibold">Community Sort:</span>
+      <a href="{{ social_sort_urls.default }}"
+         class="btn btn-sm {{ 'btn-primary' if social_sort == 'default' else 'btn-outline-primary' }}">
+        Default
+      </a>
+      <a href="{{ social_sort_urls.votes }}"
+         class="btn btn-sm {{ 'btn-primary' if social_sort == 'votes' else 'btn-outline-primary' }}">
+        <i class="bi bi-hand-thumbs-up me-1"></i>Most Votes
+      </a>
+      <a href="{{ social_sort_urls.comments }}"
+         class="btn btn-sm {{ 'btn-primary' if social_sort == 'comments' else 'btn-outline-primary' }}">
+        <i class="bi bi-chat-dots me-1"></i>Most Comments
+      </a>
+    </div>
+
     {% if view_mode == 'list' %}
     <div class="card border-0 shadow-sm">
       <div class="table-responsive">
@@ -60,6 +76,7 @@
               <td class="small">
                 <form method="POST" action="{{ url_for('student.vote_ticket', ticket_id=ticket.TicketId) }}" class="d-inline">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                  <input type="hidden" name="next" value="{{ request.full_path }}#ticket-row-{{ ticket.TicketId }}"/>
                   <button type="submit" class="btn btn-sm {{ 'btn-primary' if ticket.TicketId in my_ticket_votes else 'btn-outline-primary' }}">
                     <i class="bi bi-hand-thumbs-up"></i> {{ ticket.vote_count }}
                   </button>
@@ -85,7 +102,7 @@
     <div class="row g-3">
       {% for ticket in tickets %}
       <div class="col-12 col-md-6">
-        <article class="card border-0 shadow-sm h-100">
+        <article class="card border-0 shadow-sm h-100" id="ticket-card-{{ ticket.TicketId }}">
           <div class="card-body">
             <div class="d-flex justify-content-between align-items-center mb-2">
               <div>
@@ -101,6 +118,7 @@
             <div class="d-flex align-items-center gap-3 small mb-2">
               <form method="POST" action="{{ url_for('student.vote_ticket', ticket_id=ticket.TicketId) }}" class="d-inline">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                <input type="hidden" name="next" value="{{ request.full_path }}#ticket-card-{{ ticket.TicketId }}"/>
                 <button type="submit" class="btn btn-sm {{ 'btn-primary' if ticket.TicketId in my_ticket_votes else 'btn-outline-primary' }}">
                   <i class="bi bi-hand-thumbs-up"></i> {{ ticket.vote_count }}
                 </button>

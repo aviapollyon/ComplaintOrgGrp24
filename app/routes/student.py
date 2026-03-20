@@ -17,6 +17,7 @@ from app.models.admin_notification import AdminNotification
 from app.models.user import User, RoleEnum
 from app.models.ticket_vote import TicketVote
 from app.models.ticket_comment import TicketComment
+from app.models.comment_attachment import CommentAttachment
 from app.models.comment_vote import CommentVote
 from app.models.user_preference import UserPreference
 from app.utils.decorators     import role_required
@@ -41,6 +42,8 @@ from app.forms.student_forms  import (
 )
 
 student_bp = Blueprint('student', __name__)
+
+COMMENT_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
 
 
 def _publish_ticket_activity(ticket: Ticket, action: str, actor_id: int, extra: dict = None):
@@ -224,7 +227,30 @@ def community():
             )
         )
 
-    community_query = apply_sort(community_query, filter_form.sort.data or 'newest')
+    base_sorted_query = apply_sort(community_query, filter_form.sort.data or 'newest')
+
+    social_sort = request.args.get('social_sort', 'default', type=str).strip().lower()
+    if social_sort not in ('default', 'votes', 'comments'):
+        social_sort = 'default'
+
+    if social_sort == 'votes':
+        vote_count_sq = (
+            db.select(db.func.count(TicketVote.VoteId))
+            .where(TicketVote.TicketId == Ticket.TicketId)
+            .correlate(Ticket)
+            .scalar_subquery()
+        )
+        community_query = base_sorted_query.order_by(None).order_by(vote_count_sq.desc(), Ticket.UpdatedAt.desc())
+    elif social_sort == 'comments':
+        comment_count_sq = (
+            db.select(db.func.count(TicketComment.CommentId))
+            .where(TicketComment.TicketId == Ticket.TicketId)
+            .correlate(Ticket)
+            .scalar_subquery()
+        )
+        community_query = base_sorted_query.order_by(None).order_by(comment_count_sq.desc(), Ticket.UpdatedAt.desc())
+    else:
+        community_query = base_sorted_query
     page = request.args.get('page', 1, type=int)
     try:
         per_page = int(filter_form.per_page.data or current_app.config.get('TICKETS_PER_PAGE', 15))
@@ -246,12 +272,20 @@ def community():
             s for subs in CATEGORY_SUBCATEGORY_MAP.values() for s in subs
         })
 
+    social_sort_urls = {
+        'default': _build_community_sort_url('default'),
+        'votes': _build_community_sort_url('votes'),
+        'comments': _build_community_sort_url('comments'),
+    }
+
     return render_template(
         'student/community.html',
         tickets=pagination.items,
         pagination=pagination,
         my_ticket_votes=my_ticket_votes,
         filter_form=filter_form,
+        social_sort=social_sort,
+        social_sort_urls=social_sort_urls,
         view_mode=view_mode,
         category_options=category_options,
         available_subcategories=available_subcategories,
@@ -381,7 +415,7 @@ def view_ticket(ticket_id):
                    .all())
 
     student_comments = (TicketComment.query
-                        .filter_by(TicketId=ticket.TicketId)
+                        .filter_by(TicketId=ticket.TicketId, ParentCommentId=None)
                         .order_by(TicketComment.CreatedAt.desc())
                         .all())
 
@@ -434,7 +468,7 @@ def vote_ticket(ticket_id):
 
     if ticket.StudentId == current_user.UserId:
         flash('You cannot vote on your own ticket.', 'warning')
-        return redirect(request.referrer or url_for('student.community'))
+        return redirect(_safe_next_url() or request.referrer or url_for('student.community'))
 
     existing = TicketVote.query.filter_by(
         TicketId=ticket_id,
@@ -451,41 +485,71 @@ def vote_ticket(ticket_id):
 
     db.session.commit()
     _publish_ticket_activity(ticket, 'ticket_vote_changed', current_user.UserId)
-    return redirect(request.referrer or url_for('student.community'))
+    return redirect(_safe_next_url() or request.referrer or url_for('student.community'))
 
 
 @student_bp.route('/ticket/<int:ticket_id>/comment', methods=['POST'])
 @login_required
-@role_required('Student')
 def add_ticket_comment(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
     form = TicketCommentForm()
 
-    detail_path = url_for('student.view_ticket', ticket_id=ticket_id)
-    referrer = request.referrer or ''
-    if request.form.get('from_detail') != '1' or detail_path not in referrer:
-        flash('Open the ticket details page to comment.', 'warning')
-        return redirect(url_for('student.view_ticket', ticket_id=ticket_id))
-
-    if ticket.StudentId == current_user.UserId:
-        flash('Use the activity thread for your own ticket.', 'warning')
-        return redirect(request.referrer or url_for('student.view_ticket', ticket_id=ticket_id))
+    if not _can_user_comment_on_ticket(ticket):
+        abort(403)
 
     if form.validate_on_submit():
-        db.session.add(TicketComment(
+        parent_comment_id = _parse_parent_comment_id(form.parent_comment_id.data)
+        if parent_comment_id:
+            parent_comment = TicketComment.query.get_or_404(parent_comment_id)
+            if parent_comment.TicketId != ticket_id:
+                abort(403)
+
+        comment = TicketComment(
             TicketId=ticket_id,
             UserId=current_user.UserId,
+            ParentCommentId=parent_comment_id,
             Content=form.content.data.strip(),
-        ))
+        )
+        db.session.add(comment)
+        db.session.flush()
+
+        saved_images = 0
+        for file in request.files.getlist('attachments'):
+            if not file or not file.filename:
+                continue
+            if not _is_allowed_comment_image(file.filename):
+                flash('Only image files (png, jpg, jpeg, gif, webp) are allowed for comment uploads.', 'warning')
+                continue
+            from werkzeug.utils import secure_filename
+            upload_root = current_app.config['UPLOAD_FOLDER']
+            comment_dir = os.path.join(upload_root, f'comment_{comment.CommentId}')
+            os.makedirs(comment_dir, exist_ok=True)
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(comment_dir, filename)
+            file.save(filepath)
+            db.session.add(CommentAttachment(
+                CommentId=comment.CommentId,
+                FileName=filename,
+                FilePath=filepath,
+            ))
+            saved_images += 1
+
         notify_social_comment(ticket, current_user)
 
         db.session.commit()
         _publish_ticket_activity(ticket, 'ticket_comment_added', current_user.UserId)
-        flash('Comment posted.', 'success')
+        if parent_comment_id and saved_images:
+            flash('Reply posted with image attachment(s).', 'success')
+        elif parent_comment_id:
+            flash('Reply posted.', 'success')
+        elif saved_images:
+            flash('Comment posted with image attachment(s).', 'success')
+        else:
+            flash('Comment posted.', 'success')
     else:
-        flash('Comment must be 2-500 characters.', 'danger')
+        flash('Comment must be 2-1000 characters.', 'danger')
 
-    return redirect(request.referrer or url_for('student.view_ticket', ticket_id=ticket_id))
+    return redirect(_safe_next_url() or request.referrer or _ticket_detail_url_for_current_user(ticket_id))
 
 
 @student_bp.route('/comment/<int:comment_id>/upvote', methods=['POST'])
@@ -520,7 +584,7 @@ def upvote_comment(comment_id):
         db.session.rollback()
         flash('Upvote update failed, please try again.', 'danger')
 
-    return redirect(request.referrer or url_for('student.community'))
+    return redirect(_safe_next_url() or request.referrer or url_for('student.community'))
 
 
 @student_bp.route('/settings/social', methods=['GET', 'POST'])
@@ -784,3 +848,59 @@ def _get_locked_thread_ids(ticket: Ticket) -> set[int]:
         if in_progress_after:
             locked.add(thread.UpdateId)
     return locked
+
+
+def _is_allowed_comment_image(filename: str) -> bool:
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in COMMENT_IMAGE_EXTENSIONS
+
+
+def _parse_parent_comment_id(raw_value: str | None) -> int | None:
+    if isinstance(raw_value, list):
+        values = [v for v in raw_value if v]
+        raw_value = values[-1] if values else None
+    if not raw_value:
+        return None
+    try:
+        value = int(raw_value)
+        return value if value > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _can_user_comment_on_ticket(ticket: Ticket) -> bool:
+    if current_user.Role == RoleEnum.Admin:
+        return True
+    if current_user.Role == RoleEnum.Staff:
+        return ticket.StaffId == current_user.UserId
+    if current_user.Role == RoleEnum.Student:
+        return True
+    return False
+
+
+def _ticket_detail_url_for_current_user(ticket_id: int) -> str:
+    if current_user.Role == RoleEnum.Admin:
+        return url_for('admin.ticket_detail', ticket_id=ticket_id)
+    if current_user.Role == RoleEnum.Staff:
+        return url_for('staff.view_ticket', ticket_id=ticket_id)
+    return url_for('student.view_ticket', ticket_id=ticket_id)
+
+
+def _build_community_sort_url(social_sort: str) -> str:
+    args = {}
+    for key, values in request.args.lists():
+        if key == 'social_sort':
+            continue
+        if key == 'page':
+            continue
+        args[key] = values if len(values) > 1 else values[0]
+    args['social_sort'] = social_sort
+    return url_for('student.community', **args)
+
+
+def _safe_next_url() -> str | None:
+    next_url = (request.form.get('next') or '').strip()
+    if not next_url:
+        return None
+    if next_url.startswith('/'):
+        return next_url
+    return None

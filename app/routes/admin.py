@@ -35,6 +35,7 @@ from app.forms.admin_forms       import (
     AddDepartmentForm, EditDepartmentForm,
     AnnouncementForm, EscalationReviewForm,
 )
+from app.forms.student_forms import TicketCommentForm
 from app.services.notifications import notify_sla_breach
 
 
@@ -579,7 +580,7 @@ def ticket_detail(ticket_id):
                    .order_by(TicketUpdate.CreatedAt.asc())
                    .all())
     student_comments = (TicketComment.query
-                        .filter_by(TicketId=ticket.TicketId)
+                        .filter_by(TicketId=ticket.TicketId, ParentCommentId=None)
                         .order_by(TicketComment.CreatedAt.desc())
                         .all())
     attachments = ticket.attachments.filter_by(UpdateId=None).all()
@@ -590,6 +591,7 @@ def ticket_detail(ticket_id):
     force_form = ForceStatusForm()
 
     priority_form = ForcePriorityForm()
+    comment_form = TicketCommentForm()
 
     pending_escalation = EscalationRequest.query.filter_by(
         TicketId=ticket_id, Status='Pending'
@@ -610,6 +612,7 @@ def ticket_detail(ticket_id):
         reassign_form=reassign_form,
         force_form=force_form,
         priority_form=priority_form,
+        comment_form=comment_form,
         pending_escalation=pending_escalation,
         escalation_form=escalation_form,
         pending_reopen=pending_reopen,
@@ -1444,6 +1447,10 @@ def review_reopen(ticket_id):
     if action == 'approve':
         # Return ticket to the last assigned staff member
         last_staff_id = ticket.StaffId
+
+        # Reopened tickets should collect fresh feedback after a new resolution cycle.
+        ticket.FeedbackRating  = None
+        ticket.FeedbackComment = None
 
         # Overwrite resolved timestamps
         ticket.Status     = StatusEnum.InProgress

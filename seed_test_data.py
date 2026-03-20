@@ -26,9 +26,13 @@ from app.models.announcement       import Announcement
 from app.models.admin_notification import AdminNotification
 from app.models.ticket_vote         import TicketVote
 from app.models.ticket_comment      import TicketComment
+from app.models.comment_attachment  import CommentAttachment
 from app.models.comment_vote        import CommentVote
 from app.models.user_preference     import UserPreference
-from app.utils.helpers             import check_and_raise_flags
+from app.models.escalation          import EscalationRequest
+from app.models.reassignment_request import ReassignmentRequest
+from app.models.reopen_request      import ReopenRequest
+from app.utils.helpers             import check_and_raise_flags, get_subcategories_for_category
 from app.services.notifications    import (
     notify_ticket_assigned,
     notify_status_update,
@@ -37,7 +41,8 @@ from app.services.notifications    import (
     notify_ticket_rejected,
     notify_progress_update,
 )
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import base64
 import random
 import os
 
@@ -50,7 +55,9 @@ app.config['MAIL_SUPPRESS_SEND'] = True
 # ── helpers ─────────────────────��─────────────────────────────────────────────
 
 def days_ago(n, hours=0, minutes=0):
-    return datetime.utcnow() - timedelta(days=n, hours=hours, minutes=minutes)
+    # Keep naive UTC datetimes for compatibility with existing DateTime columns.
+    utc_now = datetime.now(timezone.utc).replace(tzinfo=None)
+    return utc_now - timedelta(days=n, hours=hours, minutes=minutes)
 
 
 def make_user(full_name, email, password, role, dept):
@@ -70,11 +77,15 @@ def make_user(full_name, email, password, role, dept):
 def make_ticket(student, staff, dept, title, description,
                 category, priority, status,
                 created_days_ago, resolved_days_ago=None,
-                feedback_rating=None, feedback_comment=None):
+                feedback_rating=None, feedback_comment=None,
+                sub_category=None):
     created_at  = days_ago(created_days_ago, random.randint(0, 8))
     resolved_at = None
     if resolved_days_ago is not None:
         resolved_at = days_ago(resolved_days_ago, random.randint(0, 4))
+    if not sub_category:
+        candidates = get_subcategories_for_category(category)
+        sub_category = random.choice(candidates) if candidates else 'Other'
     t = Ticket(
         StudentId       = student.UserId,
         StaffId         = staff.UserId if staff else None,
@@ -82,6 +93,7 @@ def make_ticket(student, staff, dept, title, description,
         Title           = title,
         Description     = description,
         Category        = category,
+        SubCategory     = sub_category,
         Priority        = priority,
         Status          = status,
         CreatedAt       = created_at,
@@ -92,6 +104,8 @@ def make_ticket(student, staff, dept, title, description,
     )
     db.session.add(t)
     db.session.flush()
+    if not t.TrackingRef:
+        t.TrackingRef = Ticket.generate_tracking_ref(t.TicketId)
     return t
 
 
@@ -569,7 +583,7 @@ with app.app_context():
     # ── ADMINISTRATION ────────────────────────────────────────────────────────
 
     t22 = make_ticket(
-        ayanda, mandla, admin_dept,
+        ayanda, None, admin_dept,
         'Wrong qualification on academic record — transcript error',
         'My academic transcript shows "Diploma in Business Studies" but I am registered '
         'for "Bachelor of Commerce". This needs correction urgently for a bursary application.',
@@ -629,14 +643,74 @@ with app.app_context():
     notify_ticket_assigned(t25)
     # ► "result" now in t1, t2, t3, t25 — four Academic tickets → flag triggered
 
-    # ── 6. Run keyword flag checks ────────────────────────────────────────────
+    # ── 6a. Pending admin requests (escalation/reassignment/reopen) ─────────
+    pending_escalations = [
+        (t7, priya, admin_dept, 'Exam clash affects multiple modules and needs registrar intervention.', 2),
+        (t13, nomsa, academic, 'Student email lockout appears linked to registration data mismatch.', 1),
+        (t21, rajan, admin_dept, 'Transport delays require central timetabling and fleet coordination.', 1),
+    ]
+    for ticket, requested_by, target_dept, reason, created_days_ago in pending_escalations:
+        existing = EscalationRequest.query.filter_by(
+            TicketId=ticket.TicketId,
+            Status='Pending',
+        ).first()
+        if not existing:
+            db.session.add(EscalationRequest(
+                TicketId=ticket.TicketId,
+                RequestedById=requested_by.UserId,
+                TargetDeptId=target_dept.DepartmentId,
+                Reason=reason,
+                Status='Pending',
+                CreatedAt=days_ago(created_days_ago),
+            ))
+
+    pending_reassignments = [
+        (t3, sipho, priya, 'Priya is handling related module-result backlog and has existing context.', 2),
+        (t10, rajan, mandla, 'Issue intersects with lecture scheduling and needs admin coordination.', 1),
+        (t24, thabo, nomsa, 'Nomsa is currently leading the computer-lab stability workstream.', 1),
+    ]
+    for ticket, requested_by, target_staff, reason, created_days_ago in pending_reassignments:
+        existing = ReassignmentRequest.query.filter_by(
+            TicketId=ticket.TicketId,
+            Status='Pending',
+        ).first()
+        if not existing:
+            db.session.add(ReassignmentRequest(
+                TicketId=ticket.TicketId,
+                RequestedById=requested_by.UserId,
+                TargetStaffId=target_staff.UserId,
+                Reason=reason,
+                Status='Pending',
+                CreatedAt=days_ago(created_days_ago),
+            ))
+
+    pending_reopens = [
+        (t4, keegan, 'NSFAS allowance reflected once, then disappeared after month-end reconciliation.', 3),
+        (t14, mohammed, 'Library Wi-Fi drops resumed during evening sessions after the previous fix.', 2),
+        (t19, ayanda, 'Counselling appointment was never scheduled despite the resolved update.', 1),
+    ]
+    for ticket, student, reason, created_days_ago in pending_reopens:
+        existing = ReopenRequest.query.filter_by(
+            TicketId=ticket.TicketId,
+            Status='Pending',
+        ).first()
+        if not existing:
+            db.session.add(ReopenRequest(
+                TicketId=ticket.TicketId,
+                StudentId=student.UserId,
+                Reason=reason,
+                Status='Pending',
+                CreatedAt=days_ago(created_days_ago),
+            ))
+
+    # ── 7. Run keyword flag checks ────────────────────────────────────────────
     # Process in submission order so counts accumulate correctly
     for t in [t1, t2, t3, t4, t5, t6, t7, t8, t9,
               t10, t11, t12, t13, t14, t15, t16, t17, t18,
               t19, t20, t21, t22, t23, t24, t25]:
         check_and_raise_flags(t)
 
-    # ── 7. Announcements ──────────────────────────────────────────────────────
+    # ── 8. Announcements ──────────────────────────────────────────────────────
     announcements_data = [
         (
             'System Maintenance — Saturday 14 March',
@@ -673,7 +747,7 @@ with app.app_context():
                 CreatedAt=days_ago(random.randint(1, 10)),
             ))
 
-    # ── 8. Social interactions (votes, comments, comment upvotes) ───────────
+    # ── 9. Social interactions (votes, comments, comment upvotes) ───────────
     social_votes = [
         (t2, keegan),
         (t2, chloe),
@@ -689,25 +763,84 @@ with app.app_context():
         if not exists and ticket.StudentId != voter.UserId:
             db.session.add(TicketVote(TicketId=ticket.TicketId, UserId=voter.UserId))
 
-    social_comments = [
-        (t2, keegan, 'I have a similar timetable issue, please keep us updated.'),
-        (t2, chloe, 'This affects my class too. Supporting this complaint.'),
-        (t10, ayanda, 'E-Block was extremely hot this week. Thank you for logging this.'),
-        (t21, mohammed, 'Shuttle delays made me miss practical sessions as well.'),
-        (t24, zanele, 'Our lab also freezes after the latest update.'),
-    ]
-    created_comments = []
-    for ticket, author, content in social_comments:
+    def ensure_comment(ticket, author, content, parent=None):
+        parent_id = parent.CommentId if parent else None
         exists = TicketComment.query.filter_by(
             TicketId=ticket.TicketId,
             UserId=author.UserId,
+            ParentCommentId=parent_id,
             Content=content,
         ).first()
-        if not exists and ticket.StudentId != author.UserId:
-            comment = TicketComment(TicketId=ticket.TicketId, UserId=author.UserId, Content=content)
-            db.session.add(comment)
-            db.session.flush()
-            created_comments.append(comment)
+        if exists:
+            return exists
+
+        comment = TicketComment(
+            TicketId=ticket.TicketId,
+            UserId=author.UserId,
+            ParentCommentId=parent_id,
+            Content=content,
+        )
+        db.session.add(comment)
+        db.session.flush()
+        return comment
+
+    def attach_demo_comment_image(comment, filename_stem):
+        upload_root = app.config.get('UPLOAD_FOLDER')
+        if not upload_root:
+            return
+
+        tiny_png = base64.b64decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO5x7J8AAAAASUVORK5CYII='
+        )
+        comment_dir = os.path.join(upload_root, f'comment_{comment.CommentId}')
+        os.makedirs(comment_dir, exist_ok=True)
+        filename = f'{filename_stem}.png'
+        filepath = os.path.join(comment_dir, filename)
+
+        if not os.path.exists(filepath):
+            with open(filepath, 'wb') as handle:
+                handle.write(tiny_png)
+
+        existing_attachment = CommentAttachment.query.filter_by(
+            CommentId=comment.CommentId,
+            FileName=filename,
+        ).first()
+        if not existing_attachment:
+            db.session.add(CommentAttachment(
+                CommentId=comment.CommentId,
+                FileName=filename,
+                FilePath=filepath,
+            ))
+
+    c1 = ensure_comment(t2, keegan, 'I have a similar timetable issue, please keep us updated.')
+    c2 = ensure_comment(t2, chloe, 'This affects my class too. Supporting this complaint.')
+    c3 = ensure_comment(t10, ayanda, 'E-Block was extremely hot this week. Thank you for logging this.')
+    c4 = ensure_comment(t21, mohammed, 'Shuttle delays made me miss practical sessions as well.')
+    c5 = ensure_comment(t24, zanele, 'Our lab also freezes after the latest update.')
+
+    # Students can now comment on their own tickets too.
+    c6 = ensure_comment(t2, zanele, 'Owner update: still waiting for timetable office confirmation.')
+    c7 = ensure_comment(t21, rishi, 'Owner update: delay was 40 minutes again this morning.')
+
+    # Staff/admin participation in the community thread.
+    c8 = ensure_comment(t2, priya, 'Staff note: registrar has acknowledged the clash and is reviewing options.')
+    c9 = ensure_comment(t10, rajan, 'Maintenance team has now been assigned to this area.')
+    c10 = ensure_comment(t2, admin_user, 'Admin note: this has been escalated for timetable prioritization.')
+
+    # Threaded replies, including student-to-student replies.
+    ensure_comment(t2, ayanda, '@Keegan same here, this is affecting BUS modules too.', parent=c1)
+    ensure_comment(t2, keegan, '@Ayanda thanks, hopefully they resolve both together.', parent=c1)
+    ensure_comment(t2, mohammed, '@Zanele please share if you receive any registrar feedback.', parent=c6)
+    ensure_comment(t2, chloe, '@Mohammed +1, this is useful for all of us following.', parent=c6)
+    ensure_comment(t10, chloe, '@Ayanda I can confirm the room is still hot after midday.', parent=c3)
+    ensure_comment(t10, rajan, 'Thanks all. The vent motor replacement is scheduled for tomorrow.', parent=c3)
+    ensure_comment(t21, tayla, '@Rishi same experience from Steve Biko side.', parent=c7)
+
+    # Seed sample image attachments on comments.
+    attach_demo_comment_image(c3, 'facilities_e_block_temp')
+    attach_demo_comment_image(c6, 'timetable_clash_notice')
+
+    created_comments = [c1, c2, c3, c4, c5, c6, c7, c8, c9, c10]
 
     for c in created_comments:
         upvoters = [u for u in [ayanda, keegan, zanele, rishi, chloe, lethiwe, mohammed, tayla] if u.UserId != c.UserId][:2]
@@ -788,5 +921,10 @@ with app.app_context():
     print('\n── ANNOUNCEMENTS ───────────────────────────────────────────────────')
     for title, _, audience in announcements_data:
         print(f'  [{audience:<7}] {title}')
+
+    print('\n── ADMIN PENDING REQUESTS ──────────────────────────────────────────')
+    print(f"  Escalation:   {EscalationRequest.query.filter_by(Status='Pending').count()}")
+    print(f"  Reassignment: {ReassignmentRequest.query.filter_by(Status='Pending').count()}")
+    print(f"  Reopen:       {ReopenRequest.query.filter_by(Status='Pending').count()}")
 
     print('\n' + '═' * 70 + '\n')

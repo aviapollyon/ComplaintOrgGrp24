@@ -18,6 +18,12 @@ class TicketComment(db.Model):
         nullable=False,
         index=True,
     )
+    ParentCommentId = db.Column(
+        db.Integer,
+        db.ForeignKey('ticket_comments.CommentId', name='fk_ticket_comments_parent_comment_id'),
+        nullable=True,
+        index=True,
+    )
     Content = db.Column(db.Text, nullable=False)
     CreatedAt = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
@@ -28,6 +34,25 @@ class TicketComment(db.Model):
         back_populates='comment',
         lazy='dynamic',
         foreign_keys='CommentVote.CommentId',
+        cascade='all, delete-orphan',
+    )
+    parent_comment = db.relationship(
+        'TicketComment',
+        remote_side=[CommentId],
+        foreign_keys=[ParentCommentId],
+        back_populates='replies',
+    )
+    replies = db.relationship(
+        'TicketComment',
+        back_populates='parent_comment',
+        lazy='dynamic',
+        foreign_keys='TicketComment.ParentCommentId',
+        order_by='TicketComment.CreatedAt.asc()',
+    )
+    attachments = db.relationship(
+        'CommentAttachment',
+        back_populates='comment',
+        lazy='dynamic',
         cascade='all, delete-orphan',
     )
 

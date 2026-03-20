@@ -123,6 +123,7 @@
           </a>
           {% endif %}
 
+          {% if current_user.Role.value != 'Admin' %}
           <a class="btn-nav-icon position-relative" href="{{ url_for('notif.list_notifications') }}" title="My Notifications" data-user-bell="1">
             <i class="bi bi-bell"></i>
             {% if user_unread_count > 0 %}
@@ -131,6 +132,7 @@
             </span>
             {% endif %}
           </a>
+          {% endif %}
 
           <button class="btn-nav-icon theme-toggle-btn" data-theme-toggle title="Toggle dark/light mode">
             <i class="bi bi-sun-fill theme-icon"></i>

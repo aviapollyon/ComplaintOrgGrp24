@@ -1,8 +1,8 @@
 """Initial schema
 
-Revision ID: c487668a9f79
+Revision ID: 312e87db970f
 Revises: 
-Create Date: 2026-03-17 11:05:06.164704
+Create Date: 2026-03-20 01:20:18.918226
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = 'c487668a9f79'
+revision = '312e87db970f'
 down_revision = None
 branch_labels = None
 depends_on = None
@@ -25,6 +25,26 @@ def upgrade():
     sa.PrimaryKeyConstraint('DepartmentId'),
     sa.UniqueConstraint('Name')
     )
+    op.create_table('pending_registrations',
+    sa.Column('PendingId', sa.Integer(), nullable=False),
+    sa.Column('FullName', sa.String(length=150), nullable=False),
+    sa.Column('Email', sa.String(length=150), nullable=False),
+    sa.Column('PasswordHash', sa.String(length=256), nullable=False),
+    sa.Column('Role', sa.Enum('Student', 'Staff', 'Admin', name='roleenum'), nullable=False),
+    sa.Column('POPIAConsent', sa.Boolean(), nullable=False),
+    sa.Column('POPIAConsentAt', sa.DateTime(), nullable=True),
+    sa.Column('VerificationTokenHash', sa.String(length=64), nullable=False),
+    sa.Column('VerificationExpiresAt', sa.DateTime(), nullable=False),
+    sa.Column('LastVerificationSentAt', sa.DateTime(), nullable=True),
+    sa.Column('ConsumedAt', sa.DateTime(), nullable=True),
+    sa.Column('CreatedAt', sa.DateTime(), nullable=False),
+    sa.Column('UpdatedAt', sa.DateTime(), nullable=False),
+    sa.PrimaryKeyConstraint('PendingId')
+    )
+    with op.batch_alter_table('pending_registrations', schema=None) as batch_op:
+        batch_op.create_index(batch_op.f('ix_pending_registrations_Email'), ['Email'], unique=True)
+        batch_op.create_index(batch_op.f('ix_pending_registrations_VerificationTokenHash'), ['VerificationTokenHash'], unique=False)
+
     op.create_table('ticket_flags',
     sa.Column('FlagId', sa.Integer(), nullable=False),
     sa.Column('Category', sa.String(length=100), nullable=False),
@@ -84,7 +104,7 @@ def upgrade():
     sa.Column('Category', sa.String(length=100), nullable=False),
     sa.Column('SubCategory', sa.String(length=100), nullable=True),
     sa.Column('TrackingRef', sa.String(length=20), nullable=True),
-    sa.Column('Priority', sa.Enum('High', 'Medium', 'Low', name='priorityenum'), nullable=False),
+    sa.Column('Priority', sa.Enum('High', 'Medium', 'Low', name='priorityenum'), nullable=True),
     sa.Column('Status', sa.Enum('Submitted', 'Assigned', 'InProgress', 'PendingInfo', 'Resolved', 'Rejected', name='statusenum'), nullable=False),
     sa.Column('CreatedAt', sa.DateTime(), nullable=True),
     sa.Column('UpdatedAt', sa.DateTime(), nullable=True),
@@ -287,5 +307,10 @@ def downgrade():
     op.drop_table('announcements')
     op.drop_table('users')
     op.drop_table('ticket_flags')
+    with op.batch_alter_table('pending_registrations', schema=None) as batch_op:
+        batch_op.drop_index(batch_op.f('ix_pending_registrations_VerificationTokenHash'))
+        batch_op.drop_index(batch_op.f('ix_pending_registrations_Email'))
+
+    op.drop_table('pending_registrations')
     op.drop_table('departments')
     # ### end Alembic commands ###

@@ -39,7 +39,6 @@
                 <th>Community</th>
                 <th>Status</th>
                 <th>Submitted</th>
-                <th>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -47,6 +46,16 @@
               <tr>
                 <td class="text-muted small">#{{ ticket.TicketId }}</td>
                 <td>
+                  <div class="d-inline-flex align-items-center gap-1 me-2">
+                    <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}" class="btn btn-sm btn-outline-primary" title="View complaint">
+                      <i class="bi bi-eye"></i>
+                    </a>
+                    {% if ticket.is_editable %}
+                    <a href="{{ url_for('student.edit_ticket', ticket_id=ticket.TicketId) }}" class="btn btn-sm btn-outline-secondary" title="Edit complaint">
+                      <i class="bi bi-pencil"></i>
+                    </a>
+                    {% endif %}
+                  </div>
                   <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}" class="text-decoration-none fw-semibold">
                     {{ ticket.Title }}
                   </a>
@@ -104,12 +113,6 @@
                   {% endif %}
                 </td>
                 <td class="small text-muted">{{ ticket.CreatedAt.strftime('%d %b %Y') }}</td>
-                <td>
-                  <a href="{{ url_for('student.view_ticket', ticket_id=ticket.TicketId) }}" class="btn btn-sm btn-outline-primary"><i class="bi bi-eye"></i></a>
-                  {% if ticket.is_editable %}
-                  <a href="{{ url_for('student.edit_ticket', ticket_id=ticket.TicketId) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i></a>
-                  {% endif %}
-                </td>
               </tr>
               {% endfor %}
             </tbody>

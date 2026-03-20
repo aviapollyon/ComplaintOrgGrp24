@@ -3,7 +3,7 @@ import socket
 import threading
 import time
 
-from flask import url_for
+from flask import has_request_context, url_for
 
 from app import db
 from app.models.user_notification import UserNotification
@@ -52,6 +52,11 @@ def _ticket_link_for_user(user_id: int, ticket_id: int) -> str:
     if not ticket_id:
         return ''
 
+    # Seeding and background work may run with an app context but no request context.
+    # In that case Flask cannot build endpoint URLs unless SERVER_NAME is configured.
+    if not has_request_context():
+        return ''
+
     user = User.query.get(user_id)
     if not user:
         return ''
@@ -66,6 +71,9 @@ def _ticket_link_for_user(user_id: int, ticket_id: int) -> str:
 
 
 def _dashboard_link_for_user(user_id: int) -> str:
+    if not has_request_context():
+        return ''
+
     user = User.query.get(user_id)
     if not user:
         return ''

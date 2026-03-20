@@ -237,19 +237,100 @@
           </div>
 
           <div class="tab-pane fade" id="admin-comments-pane" role="tabpanel" aria-labelledby="admin-comments-tab">
+            <form method="POST" action="{{ url_for('student.add_ticket_comment', ticket_id=ticket.TicketId) }}" class="mb-3" enctype="multipart/form-data">
+              {{ comment_form.hidden_tag() }}
+              <input type="hidden" name="parent_comment_id" value=""/>
+              <input type="hidden" name="next" value="{{ url_for('admin.ticket_detail', ticket_id=ticket.TicketId, _anchor='admin-comments-pane') }}"/>
+              {{ comment_form.content(class="form-control form-control-sm mb-2", rows=2, placeholder='Add a community comment...') }}
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <label class="btn btn-sm btn-outline-secondary mb-0">
+                  <i class="bi bi-image me-1"></i>Add Images
+                  {{ comment_form.attachments(class="d-none", multiple=True, id='fileInput_admin_comment_new') }}
+                </label>
+                <div id="selectedFiles_fileInput_admin_comment_new" class="small text-muted text-truncate" style="max-width: 60%;">No files selected</div>
+              </div>
+              <button type="submit" class="btn btn-sm btn-outline-secondary">
+                <i class="bi bi-chat-left-text me-1"></i>Post Comment
+              </button>
+            </form>
+
             {% if student_comments %}
               {% for c in student_comments %}
               <div class="border rounded p-2 mb-2">
                 <div class="d-flex justify-content-between align-items-center mb-1">
-                  <span class="fw-semibold small">{{ c.user.FullName if c.user else 'Student' }}</span>
+                  <span class="fw-semibold small">
+                    {{ c.user.FullName if c.user else 'User' }}
+                    {% if c.user %}
+                    <span class="badge ms-1 {{ 'bg-secondary' if c.user.Role.value == 'Student' else ('bg-primary' if c.user.Role.value == 'Staff' else 'bg-danger') }}" style="font-size:0.65rem;">{{ c.user.Role.value }}</span>
+                    {% endif %}
+                  </span>
                   <span class="text-muted" style="font-size:0.72rem;">{{ c.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
                 </div>
-                <p class="small mb-1">{{ c.Content }}</p>
+                <p class="small mb-2">{{ c.Content }}</p>
+                {% if c.attachments.count() %}
+                <div class="d-flex flex-wrap gap-2 mb-2">
+                  {% for img in c.attachments.all() %}
+                  <a href="{{ attachment_url(img) }}" target="_blank" class="d-inline-block">
+                    <img src="{{ attachment_url(img) }}" alt="{{ img.FileName }}" class="img-thumbnail" style="max-height: 120px; max-width: 160px; object-fit: cover;"/>
+                  </a>
+                  {% endfor %}
+                </div>
+                {% endif %}
                 <span class="small text-muted"><i class="bi bi-hand-thumbs-up me-1"></i>{{ c.upvote_count }}</span>
+
+                <button class="btn btn-sm btn-outline-secondary ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#adminReplyForm_{{ c.CommentId }}" aria-expanded="false" aria-controls="adminReplyForm_{{ c.CommentId }}">
+                  <i class="bi bi-reply me-1"></i>Reply
+                </button>
+
+                <div class="collapse mt-2" id="adminReplyForm_{{ c.CommentId }}">
+                  <form method="POST" action="{{ url_for('student.add_ticket_comment', ticket_id=ticket.TicketId) }}" enctype="multipart/form-data" class="border rounded p-2 bg-light">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                    <input type="hidden" name="parent_comment_id" value="{{ c.CommentId }}"/>
+                    <input type="hidden" name="next" value="{{ url_for('admin.ticket_detail', ticket_id=ticket.TicketId, _anchor='admin-comments-pane') }}"/>
+                    <textarea name="content" class="form-control form-control-sm mb-2" rows="2" placeholder="Reply to {{ c.user.FullName if c.user else 'this comment' }}..."></textarea>
+                    <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                      <label class="btn btn-sm btn-outline-secondary mb-0">
+                        <i class="bi bi-image me-1"></i>Add Images
+                        <input type="file" name="attachments" id="fileInput_admin_reply_comment_{{ c.CommentId }}" class="d-none" multiple accept=".png,.jpg,.jpeg,.gif,.webp"/>
+                      </label>
+                      <div id="selectedFiles_fileInput_admin_reply_comment_{{ c.CommentId }}" class="small text-muted text-truncate" style="max-width: 58%;">No files selected</div>
+                    </div>
+                    <button type="submit" class="btn btn-sm btn-primary">
+                      <i class="bi bi-send me-1"></i>Post Reply
+                    </button>
+                  </form>
+                </div>
+
+                {% for reply in c.replies.all() %}
+                <div class="border rounded p-2 mt-2 ms-3 bg-light">
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-semibold small">
+                      {{ reply.user.FullName if reply.user else 'User' }}
+                      {% if reply.user %}
+                      <span class="badge ms-1 {{ 'bg-secondary' if reply.user.Role.value == 'Student' else ('bg-primary' if reply.user.Role.value == 'Staff' else 'bg-danger') }}" style="font-size:0.65rem;">{{ reply.user.Role.value }}</span>
+                      {% endif %}
+                      {% if reply.user and c.user and reply.user.Role.value == 'Student' and c.user.Role.value == 'Student' and reply.UserId != c.UserId %}
+                      <span class="badge bg-info text-dark ms-1" style="font-size:0.65rem;"><i class="bi bi-arrow-return-right me-1"></i>Replying to {{ c.user.FullName }}</span>
+                      {% endif %}
+                    </span>
+                    <span class="text-muted" style="font-size:0.72rem;">{{ reply.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
+                  </div>
+                  <p class="small mb-2">{{ reply.Content }}</p>
+                  {% if reply.attachments.count() %}
+                  <div class="d-flex flex-wrap gap-2">
+                    {% for img in reply.attachments.all() %}
+                    <a href="{{ attachment_url(img) }}" target="_blank" class="d-inline-block">
+                      <img src="{{ attachment_url(img) }}" alt="{{ img.FileName }}" class="img-thumbnail" style="max-height: 110px; max-width: 150px; object-fit: cover;"/>
+                    </a>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+                </div>
+                {% endfor %}
               </div>
               {% endfor %}
             {% else %}
-              <p class="text-muted small mb-0">No student comments yet.</p>
+              <p class="text-muted small mb-0">No comments yet.</p>
             {% endif %}
           </div>
         </div>

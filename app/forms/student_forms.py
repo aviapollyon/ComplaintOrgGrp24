@@ -2,7 +2,7 @@ from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed
 from wtforms import (
     StringField, TextAreaField, SelectField,
-    SubmitField, IntegerField, MultipleFileField, BooleanField
+    SubmitField, IntegerField, MultipleFileField, BooleanField, HiddenField
 )
 from wtforms.validators import DataRequired, Length, NumberRange, Optional
 from app.utils.helpers import TICKET_CATEGORIES, CATEGORY_SUBCATEGORY_MAP
@@ -150,10 +150,15 @@ class ReopenRequestForm(FlaskForm):
 
 
 class TicketCommentForm(FlaskForm):
+    parent_comment_id = HiddenField('Parent Comment Id', validators=[Optional()])
     content = TextAreaField(
         'Comment',
-        validators=[DataRequired(), Length(min=2, max=500)],
+        validators=[DataRequired(), Length(min=2, max=1000)],
         render_kw={"rows": 3, "placeholder": "Add your comment..."}
+    )
+    attachments = MultipleFileField(
+        'Images (optional)',
+        validators=[FileAllowed(['png', 'jpg', 'jpeg', 'gif', 'webp'], 'Only image files are allowed.')]
     )
     submit = SubmitField('Post Comment')
 

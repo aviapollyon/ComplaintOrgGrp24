@@ -117,9 +117,19 @@
       </thead>
       <tbody>
         {% for t in tickets %}
-        <tr class="{% if t.is_resolution_sla_overdue %}table-danger{% elif t.is_response_sla_overdue %}table-warning{% endif %}">
+        <tr class="{% if t.is_resolution_sla_overdue %}sla-row-resolution{% elif t.is_response_sla_overdue %}sla-row-response{% endif %}">
           <td class="text-muted">#{{ t.TicketId }}</td>
-          <td class="fw-semibold">{{ t.Title }}</td>
+          <td>
+            <div class="fw-semibold">{{ t.Title }}</div>
+            <div class="small mt-1">
+              {% if t.is_response_sla_overdue %}
+                <span class="badge sla-tag-response me-1">First Response SLA (24h)</span>
+              {% endif %}
+              {% if t.is_resolution_sla_overdue %}
+                <span class="badge sla-tag-resolution">Resolution SLA (48h)</span>
+              {% endif %}
+            </div>
+          </td>
           <td>
             {% if t.TrackingRef %}
               <span class="font-monospace badge bg-light text-dark border"

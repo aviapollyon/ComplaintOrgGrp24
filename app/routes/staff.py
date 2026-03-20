@@ -29,6 +29,7 @@ from app.forms.staff_forms import (
     EscalationRequestForm, StaffReassignmentRequestForm,
     StaffTicketFilterForm, UpdatePriorityForm,
 )
+from app.forms.student_forms import TicketCommentForm
 
 staff_bp = Blueprint('staff', __name__)
 
@@ -460,7 +461,7 @@ def view_ticket(ticket_id):
                .order_by(TicketUpdate.CreatedAt.asc())
                .all())
     student_comments = (TicketComment.query
-                        .filter_by(TicketId=ticket.TicketId)
+                        .filter_by(TicketId=ticket.TicketId, ParentCommentId=None)
                         .order_by(TicketComment.CreatedAt.desc())
                         .all())
     attachments       = ticket.attachments.filter_by(UpdateId=None).all()
@@ -469,6 +470,7 @@ def view_ticket(ticket_id):
     resolve_form      = ResolveTicketForm()
     reply_form        = ReplyForm()
     thread_reply_form = StaffThreadReplyForm()
+    comment_form      = TicketCommentForm()
 
     if ticket.Priority:
         priority_form.priority.data = ticket.Priority.value
@@ -507,6 +509,7 @@ def view_ticket(ticket_id):
         resolve_form=resolve_form,
         reply_form=reply_form,
         thread_reply_form=thread_reply_form,
+        comment_form=comment_form,
         escalation_form=escalation_form,
         pending_escalation=pending_escalation,
         reassign_form=reassign_form,
