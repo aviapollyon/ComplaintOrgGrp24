@@ -51,6 +51,47 @@
   </div>
 </div>
 
+<section class="card border-0 shadow-sm mb-4">
+  <div class="card-header bg-transparent d-flex justify-content-between align-items-center gap-2">
+    <div>
+      <h6 class="mb-0 fw-semibold"><i class="bi bi-alarm me-1 text-danger"></i>SLA Watchlist</h6>
+      <p class="text-muted small mb-0">Overdue tickets first, then nearest potential SLA breaches.</p>
+    </div>
+    <div class="btn-group btn-group-sm" role="group" aria-label="SLA watchlist scroll controls">
+      <button type="button" class="btn btn-outline-secondary" id="slaWatchPrev" aria-label="Scroll previous watchlist items">
+        <i class="bi bi-chevron-left"></i>
+      </button>
+      <button type="button" class="btn btn-outline-secondary" id="slaWatchNext" aria-label="Scroll next watchlist items">
+        <i class="bi bi-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+  <div class="card-body pt-2">
+    <div id="slaWatchRail" class="sla-watch-rail" tabindex="0" aria-label="SLA watchlist">
+      {% for item in sla_watchlist %}
+      <article class="sla-watch-card {{ item.level }}">
+        {% if item.ticket %}
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <a href="{{ url_for('staff.view_ticket', ticket_id=item.ticket.TicketId) }}" class="text-decoration-none fw-semibold text-truncate">#{{ item.ticket.TicketId }} {{ item.ticket.Title }}</a>
+          <span class="badge text-bg-light border">{{ item.ticket.Status.value }}</span>
+        </div>
+        <div class="small text-muted mb-2">{{ item.ticket.Category }}{% if item.ticket.SubCategory %} • {{ item.ticket.SubCategory }}{% endif %}</div>
+        {% else %}
+        <div class="d-flex justify-content-between align-items-start gap-2 mb-2">
+          <span class="fw-semibold">Watchlist</span>
+          <span class="badge text-bg-light border">Info</span>
+        </div>
+        <div class="small text-muted mb-2">No ticket data</div>
+        {% endif %}
+
+        <div class="small fw-semibold mb-1">{{ item.title }}</div>
+        <div class="small text-muted">{{ item.time_text }}</div>
+      </article>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
 <div class="row g-4 align-items-start">
   <div class="col-12 col-xl-9 order-2 order-xl-1">
     {% if tickets %}
@@ -278,6 +319,29 @@
 {{ super() }}
 <script>
   (function() {
+    var slaRail = document.getElementById('slaWatchRail');
+    var slaPrev = document.getElementById('slaWatchPrev');
+    var slaNext = document.getElementById('slaWatchNext');
+
+    function scrollSla(direction) {
+      if (!slaRail) {
+        return;
+      }
+      var step = Math.max(260, Math.floor(slaRail.clientWidth * 0.8));
+      slaRail.scrollBy({ left: direction * step, behavior: 'smooth' });
+    }
+
+    if (slaPrev) {
+      slaPrev.addEventListener('click', function() {
+        scrollSla(-1);
+      });
+    }
+    if (slaNext) {
+      slaNext.addEventListener('click', function() {
+        scrollSla(1);
+      });
+    }
+
     var categorySelect = document.getElementById('staffCategorySelect');
     var subCategorySelect = document.getElementById('staffSubCategorySelect');
     if (!categorySelect || !subCategorySelect) {

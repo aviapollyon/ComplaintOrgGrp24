@@ -1,5 +1,6 @@
 from flask_wtf import FlaskForm
-from wtforms import TextAreaField, SelectField, SubmitField, StringField
+from flask_wtf.file import FileAllowed
+from wtforms import TextAreaField, SelectField, SubmitField, StringField, MultipleFileField
 from wtforms.validators import DataRequired, Length, Optional
 from app.utils.helpers import TICKET_CATEGORIES, CATEGORY_SUBCATEGORY_MAP
 
@@ -8,6 +9,7 @@ SUBCATEGORY_FILTER_CHOICES = [('', 'All Sub-Categories')] + [(s, s) for s in _al
 
 STATUS_CHOICES = [
     ('In Progress', 'In Progress'),
+    ('Pending Info', 'Pending Info'),
     ('Rejected',    'Rejected'),
 ]
 
@@ -45,6 +47,10 @@ class UpdateTicketForm(FlaskForm):
                             validators=[DataRequired(), Length(min=5, max=2000)],
                             render_kw={"rows": 4,
                                        "placeholder": "Describe the action taken..."})
+    attachments = MultipleFileField(
+        'Attachments (optional)',
+        validators=[FileAllowed(['pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx'], 'Invalid file type.')],
+    )
     submit  = SubmitField('Update Ticket')
 
 
@@ -67,6 +73,10 @@ class ResolveTicketForm(FlaskForm):
                                validators=[DataRequired(), Length(min=10, max=3000)],
                                render_kw={"rows": 5,
                                           "placeholder": "Describe how the issue was resolved..."})
+    attachments = MultipleFileField(
+        'Attachments (optional)',
+        validators=[FileAllowed(['pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx'], 'Invalid file type.')],
+    )
     submit = SubmitField('Mark as Resolved')
 
 
@@ -84,6 +94,30 @@ class StaffThreadReplyForm(FlaskForm):
                             render_kw={"rows": 2,
                                        "placeholder": "Continue the conversation..."})
     submit = SubmitField('Reply')
+
+
+class LiveChatMessageForm(FlaskForm):
+    message = TextAreaField(
+        'Live Chat Message',
+        validators=[DataRequired(), Length(min=1, max=2000)],
+        render_kw={"rows": 2, "placeholder": "Type your message..."},
+    )
+    attachments = MultipleFileField(
+        'Attachments (optional)',
+        validators=[FileAllowed(['pdf', 'png', 'jpg', 'jpeg', 'doc', 'docx'], 'Invalid file type.')],
+    )
+    submit = SubmitField('Send')
+
+
+class StaffMacroForm(FlaskForm):
+    name = StringField('Macro Name', validators=[DataRequired(), Length(min=2, max=120)])
+    macro_type = StringField('Type', validators=[DataRequired(), Length(min=2, max=80)])
+    content = TextAreaField(
+        'Content',
+        validators=[DataRequired(), Length(min=2, max=5000)],
+        render_kw={"rows": 5, "placeholder": "Reusable response text..."},
+    )
+    submit = SubmitField('Save Macro')
 
 
 class EscalationRequestForm(FlaskForm):

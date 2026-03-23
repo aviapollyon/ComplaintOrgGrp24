@@ -13,7 +13,7 @@ def apply_sort(query, sort_value: str):
     sort_value matches the SORT_CHOICES values defined in forms.
     """
     if sort_value == 'oldest':
-        return query.order_by(Ticket.CreatedAt.asc())
+        return query.order_by(Ticket.UpdatedAt.asc(), Ticket.TicketId.asc())
     elif sort_value == 'priority':
         # SQLite-compatible CASE ordering
         from sqlalchemy import case
@@ -33,4 +33,4 @@ def apply_sort(query, sort_value: str):
     elif sort_value == 'subcategory':
         return query.order_by(Ticket.SubCategory.asc(), Ticket.CreatedAt.desc())
     else:  # 'newest' is default
-        return query.order_by(Ticket.UpdatedAt.desc())
+        return query.order_by(Ticket.UpdatedAt.desc(), Ticket.TicketId.desc())

@@ -1,0 +1,237 @@
+{% extends "base.html" %}
+{% block title %}Ticket #{{ ticket.TicketId }} Actions{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('staff.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item"><a href="{{ url_for('staff.view_ticket', ticket_id=ticket.TicketId) }}">Ticket #{{ ticket.TicketId }}</a></li>
+    <li class="breadcrumb-item active">Actions</li>
+  </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h4 class="mb-0">Ticket Actions</h4>
+  <a href="{{ url_for('staff.view_ticket', ticket_id=ticket.TicketId) }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left me-1"></i>Back to Ticket
+  </a>
+</div>
+
+{% if priority_required %}
+<div class="alert alert-warning d-flex gap-2 align-items-start">
+  <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+  <div>
+    <strong>Priority required.</strong><br>
+    <span class="small">Set priority before moving this ticket to In Progress.</span>
+  </div>
+</div>
+{% endif %}
+
+{% if actions_locked %}
+<div class="alert alert-secondary d-flex gap-2 align-items-start">
+  <i class="bi bi-lock-fill mt-1"></i>
+  <div>
+    <strong>Actions disabled.</strong><br>
+    <span class="small">This ticket is already <strong>{{ ticket.Status.value }}</strong>. No further staff actions can be submitted.</span>
+  </div>
+</div>
+{% endif %}
+
+<div class="list-group mb-3">
+  <a href="#priority-card" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center {{ 'disabled text-muted bg-light' if actions_locked else '' }}" {% if actions_locked %}tabindex="-1" aria-disabled="true"{% endif %}>
+    <span><i class="bi bi-exclamation-circle me-2 text-warning"></i>Set Priority</span>
+    <span class="badge text-bg-warning text-dark">Do this first</span>
+  </a>
+  <a href="#status-card" class="list-group-item list-group-item-action {{ 'disabled text-muted bg-light' if actions_locked else '' }}" {% if actions_locked %}tabindex="-1" aria-disabled="true"{% endif %}><i class="bi bi-arrow-repeat me-2"></i>Update Status</a>
+  <a href="#resolve-card" class="list-group-item list-group-item-action {{ 'disabled text-muted bg-light' if actions_locked else '' }}" {% if actions_locked %}tabindex="-1" aria-disabled="true"{% endif %}><i class="bi bi-check-circle me-2"></i>Mark as Resolved</a>
+  <a href="#escalate-card" class="list-group-item list-group-item-action {{ 'disabled text-muted bg-light' if actions_locked else '' }}" {% if actions_locked %}tabindex="-1" aria-disabled="true"{% endif %}><i class="bi bi-arrow-up-right-circle me-2"></i>Request Escalation</a>
+  <a href="#reassign-card" class="list-group-item list-group-item-action {{ 'disabled text-muted bg-light' if actions_locked else '' }}" {% if actions_locked %}tabindex="-1" aria-disabled="true"{% endif %}><i class="bi bi-person-fill-up me-2"></i>Request Reassignment</a>
+</div>
+
+<div id="priority-card" class="card shadow-sm border-warning mb-3 priority-blink-zone">
+  <div class="card-header bg-warning text-dark fw-semibold">
+    <i class="bi bi-exclamation-circle me-1"></i>Set Priority
+  </div>
+  <div class="card-body">
+    <div class="alert alert-info py-2 small">
+      <i class="bi bi-lightbulb me-1"></i>
+      Suggested priority from keywords: <strong>{{ suggested_priority }}</strong>
+    </div>
+    <form method="POST" action="{{ url_for('staff.update_ticket_priority', ticket_id=ticket.TicketId) }}" novalidate>
+      <fieldset {% if actions_locked %}disabled{% endif %}>
+      {{ priority_form.hidden_tag() }}
+      <div class="mb-3">
+        {{ priority_form.priority.label(class="form-label fw-semibold small") }}
+        {{ priority_form.priority(class="form-select form-select-sm") }}
+      </div>
+      <div class="mb-3">
+        {{ priority_form.reason.label(class="form-label fw-semibold small") }}
+        {{ priority_form.reason(class="form-control form-control-sm", id='priorityReason') }}
+        <div class="form-text">Required: 5 to 500 characters. Current: <span id="priorityReasonCount">0</span>.</div>
+      </div>
+      {{ priority_form.submit(class="btn btn-warning btn-sm text-dark fw-semibold") }}
+      </fieldset>
+    </form>
+  </div>
+</div>
+
+<div id="status-card" class="card shadow-sm border-0 mb-3">
+  <div class="card-header bg-primary text-white fw-semibold">
+    <i class="bi bi-arrow-repeat me-1"></i>Update Status
+  </div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('staff.update_ticket', ticket_id=ticket.TicketId) }}" enctype="multipart/form-data" novalidate id="statusUpdateForm">
+      <fieldset {% if actions_locked %}disabled{% endif %}>
+      {{ update_form.hidden_tag() }}
+      <div class="mb-3">
+        {{ update_form.status.label(class="form-label fw-semibold small") }}
+        {{ update_form.status(class="form-select form-select-sm", id='statusUpdateSelect') }}
+      </div>
+      <div class="mb-3">
+        {{ update_form.comment.label(class="form-label fw-semibold small") }}
+        {{ update_form.comment(class="form-control form-control-sm", id='statusComment') }}
+        <div class="form-text">Required: 5 to 2000 characters. Current: <span id="statusCommentCount">0</span>.</div>
+      </div>
+      <div class="mb-3">
+        {{ update_form.attachments.label(class="form-label fw-semibold small") }}
+        {{ update_form.attachments(class="form-control form-control-sm", multiple=True) }}
+      </div>
+      {{ update_form.submit(class="btn btn-primary btn-sm") }}
+      </fieldset>
+    </form>
+  </div>
+</div>
+
+<div id="resolve-card" class="card shadow-sm border-success mb-3">
+  <div class="card-header bg-success text-white fw-semibold">
+    <i class="bi bi-check-circle me-1"></i>Mark as Resolved
+  </div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('staff.resolve_ticket', ticket_id=ticket.TicketId) }}" enctype="multipart/form-data" novalidate id="resolveTicketForm">
+      <fieldset {% if actions_locked %}disabled{% endif %}>
+      {{ resolve_form.hidden_tag() }}
+      <div class="mb-3">
+        {{ resolve_form.resolution.label(class="form-label fw-semibold small") }}
+        {{ resolve_form.resolution(class="form-control form-control-sm", id='resolutionDetails') }}
+        <div class="form-text">Required: 10 to 3000 characters. Current: <span id="resolutionDetailsCount">0</span>.</div>
+      </div>
+      <div class="mb-3">
+        {{ resolve_form.attachments.label(class="form-label fw-semibold small") }}
+        {{ resolve_form.attachments(class="form-control form-control-sm", multiple=True) }}
+      </div>
+      {{ resolve_form.submit(class="btn btn-success btn-sm") }}
+      </fieldset>
+    </form>
+  </div>
+</div>
+
+{% if not pending_escalation %}
+<div id="escalate-card" class="card shadow-sm border-0 mb-3">
+  <div class="card-header bg-secondary text-white fw-semibold">
+    <i class="bi bi-arrow-up-right-circle me-1"></i>Request Escalation
+  </div>
+  <div class="card-body">
+    <form method="POST" action="{{ url_for('staff.request_escalation', ticket_id=ticket.TicketId) }}" novalidate>
+      <fieldset {% if actions_locked %}disabled{% endif %}>
+      {{ escalation_form.hidden_tag() }}
+      <div class="mb-3">
+        {{ escalation_form.target_dept.label(class="form-label fw-semibold small") }}
+        {{ escalation_form.target_dept(class="form-select form-select-sm") }}
+      </div>
+      <div class="mb-3">
+        {{ escalation_form.reason.label(class="form-label fw-semibold small") }}
+        {{ escalation_form.reason(class="form-control form-control-sm", id='escalationReason') }}
+        <div class="form-text">Required: 10 to 1000 characters. Current: <span id="escalationReasonCount">0</span>.</div>
+      </div>
+      {{ escalation_form.submit(class="btn btn-secondary btn-sm") }}
+      </fieldset>
+    </form>
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">Escalation request is pending admin review.</div>
+{% endif %}
+
+{% if not pending_reassign %}
+<div id="reassign-card" class="card shadow-sm border-0 mb-3">
+  <div class="card-header bg-light fw-semibold">
+    <i class="bi bi-person-fill-up me-1"></i>Request Reassignment
+  </div>
+  <div class="card-body">
+    {% if reassign_form.target_staff.choices %}
+    <form method="POST" action="{{ url_for('staff.request_reassignment', ticket_id=ticket.TicketId) }}" novalidate>
+      <fieldset {% if actions_locked %}disabled{% endif %}>
+      {{ reassign_form.hidden_tag() }}
+      <div class="mb-3">
+        {{ reassign_form.target_staff.label(class="form-label fw-semibold small") }}
+        {{ reassign_form.target_staff(class="form-select form-select-sm") }}
+      </div>
+      <div class="mb-3">
+        {{ reassign_form.reason.label(class="form-label fw-semibold small") }}
+        {{ reassign_form.reason(class="form-control form-control-sm", id='reassignReason') }}
+        <div class="form-text">Required: 10 to 1000 characters. Current: <span id="reassignReasonCount">0</span>.</div>
+      </div>
+      {{ reassign_form.submit(class="btn btn-outline-secondary btn-sm") }}
+      </fieldset>
+    </form>
+    {% else %}
+    <p class="text-muted small mb-0">No other staff in your department.</p>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="alert alert-info">Reassignment request is pending admin review.</div>
+{% endif %}
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+  const statusForm = document.getElementById('statusUpdateForm');
+  const statusSelect = document.getElementById('statusUpdateSelect');
+  if (statusForm && statusSelect) {
+    statusForm.addEventListener('submit', (event) => {
+      const selectedStatus = (statusSelect.value || '').toLowerCase();
+      if (selectedStatus === 'rejected' || selectedStatus === 'resolved') {
+        const ok = window.confirm('Are you sure you want to mark this ticket as ' + statusSelect.value + '? This will disable further ticket actions.');
+        if (!ok) {
+          event.preventDefault();
+        }
+      }
+    });
+  }
+
+  const resolveForm = document.getElementById('resolveTicketForm');
+  if (resolveForm) {
+    resolveForm.addEventListener('submit', (event) => {
+      const ok = window.confirm('Confirm marking this ticket as Resolved? This will disable further ticket actions.');
+      if (!ok) {
+        event.preventDefault();
+      }
+    });
+  }
+
+  const countBindings = [
+    ['priorityReason', 'priorityReasonCount'],
+    ['statusComment', 'statusCommentCount'],
+    ['resolutionDetails', 'resolutionDetailsCount'],
+    ['escalationReason', 'escalationReasonCount'],
+    ['reassignReason', 'reassignReasonCount'],
+  ];
+
+  countBindings.forEach(([inputId, countId]) => {
+    const input = document.getElementById(inputId);
+    const counter = document.getElementById(countId);
+    if (!input || !counter) {
+      return;
+    }
+    const renderCount = () => {
+      counter.textContent = String((input.value || '').trim().length);
+    };
+    input.addEventListener('input', renderCount);
+    renderCount();
+  });
+})();
+</script>
+{% endblock %}

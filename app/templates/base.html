@@ -81,6 +81,7 @@
       <li class="nav-item"><a class="nav-link" href="{{ url_for('staff.new_tickets') }}"><i class="bi bi-bell-fill nav-icon"></i><span class="nav-label">New Tickets</span></a></li>
       <li class="nav-item"><a class="nav-link" href="{{ url_for('staff.reassigned_tickets') }}"><i class="bi bi-arrow-left-right nav-icon"></i><span class="nav-label">Reassigned</span></a></li>
       <li class="nav-item"><a class="nav-link" href="{{ url_for('staff.recurring_issues') }}"><i class="bi bi-flag-fill nav-icon"></i><span class="nav-label">Recurring Issues</span></a></li>
+      <li class="nav-item"><a class="nav-link" href="{{ url_for('staff.macros') }}"><i class="bi bi-journal-text nav-icon"></i><span class="nav-label">Staff Macros</span></a></li>
       {% elif current_user.Role.value == 'Admin' %}
       <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.dashboard') }}"><i class="bi bi-grid nav-icon"></i><span class="nav-label">Overview</span></a></li>
       <li class="nav-item"><a class="nav-link" href="{{ url_for('admin.recurring_issues') }}"><i class="bi bi-flag-fill nav-icon"></i><span class="nav-label">Recurring</span></a></li>
@@ -219,6 +220,36 @@
     <div class="text-muted small">&copy; 2026 Durban University of Technology &mdash; All rights reserved</div>
   </div>
 </footer>
+
+{% if current_user.is_authenticated and current_user.Role.value == 'Staff' %}
+<div id="staffMacroWidget" class="macro-widget">
+  <div id="staffMacroWidgetPanel" class="macro-widget-panel" hidden>
+    <div class="macro-widget-header">
+      <span class="fw-semibold small">Staff Macros</span>
+      <a href="{{ url_for('staff.macros') }}" class="btn btn-sm btn-outline-secondary">Open Full Page</a>
+    </div>
+    <div class="input-group input-group-sm mb-2">
+      <input id="staffMacroWidgetSearch" type="text" class="form-control" placeholder="Search by name or type"/>
+      <button id="staffMacroWidgetSearchBtn" type="button" class="btn btn-outline-secondary">Search</button>
+    </div>
+    <select id="staffMacroWidgetSelect" class="form-select form-select-sm mb-2">
+      <option value="">Select macro to copy...</option>
+    </select>
+    <div class="d-flex gap-2">
+      <button id="staffMacroWidgetCopyBtn" type="button" class="btn btn-primary btn-sm flex-grow-1">
+        <i class="bi bi-clipboard me-1"></i>Copy
+      </button>
+      <button id="staffMacroWidgetClose" type="button" class="btn btn-outline-secondary btn-sm">Close</button>
+    </div>
+    <div id="staffMacroWidgetHint" class="form-text mt-1">Copied macros can be pasted anywhere in the app.</div>
+  </div>
+
+  <button id="staffMacroWidgetToggle" type="button" class="macro-widget-fab" aria-expanded="false" aria-controls="staffMacroWidgetPanel" aria-label="Open staff macros">
+    <i class="bi bi-journal-richtext"></i>
+    <span>Macros</span>
+  </button>
+</div>
+{% endif %}
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -391,6 +422,139 @@
         : '<i class="bi bi-eye-slash" aria-hidden="true"></i>';
     });
   });
+
+  /* ── Global Staff Macro Widget ── */
+  (function() {
+    if (document.body.dataset.userRole !== 'Staff') {
+      return;
+    }
+
+    var widget = document.getElementById('staffMacroWidget');
+    var panel = document.getElementById('staffMacroWidgetPanel');
+    var toggle = document.getElementById('staffMacroWidgetToggle');
+    var closeBtn = document.getElementById('staffMacroWidgetClose');
+    var searchInput = document.getElementById('staffMacroWidgetSearch');
+    var searchBtn = document.getElementById('staffMacroWidgetSearchBtn');
+    var macroSelect = document.getElementById('staffMacroWidgetSelect');
+    var copyBtn = document.getElementById('staffMacroWidgetCopyBtn');
+    var hint = document.getElementById('staffMacroWidgetHint');
+
+    if (!widget || !panel || !toggle || !searchInput || !searchBtn || !macroSelect || !copyBtn) {
+      return;
+    }
+
+    function setOpen(isOpen) {
+      panel.hidden = !isOpen;
+      widget.classList.toggle('is-open', isOpen);
+      toggle.setAttribute('aria-expanded', String(isOpen));
+      if (isOpen) {
+        searchInput.focus();
+      }
+    }
+
+    function setHint(text, variant) {
+      if (!hint) {
+        return;
+      }
+      hint.textContent = text;
+      hint.classList.remove('text-success', 'text-danger', 'text-muted');
+      if (variant === 'success') {
+        hint.classList.add('text-success');
+      } else if (variant === 'danger') {
+        hint.classList.add('text-danger');
+      } else {
+        hint.classList.add('text-muted');
+      }
+    }
+
+    async function loadMacros() {
+      var q = encodeURIComponent((searchInput.value || '').trim());
+      var url = '{{ url_for('staff.search_macros') }}?q=' + q;
+
+      try {
+        var response = await fetch(url, { credentials: 'same-origin' });
+        if (!response.ok) {
+          throw new Error('search failed');
+        }
+        var data = await response.json();
+        var items = data.items || [];
+
+        macroSelect.innerHTML = '<option value="">Select macro to copy...</option>';
+        items.forEach(function(item) {
+          var option = document.createElement('option');
+          option.value = item.content || '';
+          option.textContent = (item.name || 'Unnamed') + ' [' + (item.macro_type || 'General') + ']';
+          macroSelect.appendChild(option);
+        });
+
+        if (items.length) {
+          setHint(items.length + ' macro(s) loaded.', 'default');
+        } else {
+          setHint('No macros found for your search.', 'default');
+        }
+      } catch (err) {
+        setHint('Unable to load macros right now.', 'danger');
+      }
+    }
+
+    async function copySelectedMacro() {
+      if (!macroSelect.value) {
+        setHint('Select a macro first.', 'danger');
+        return;
+      }
+
+      var value = macroSelect.value;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(value);
+        } else {
+          var fallback = document.createElement('textarea');
+          fallback.value = value;
+          fallback.style.position = 'fixed';
+          fallback.style.left = '-9999px';
+          document.body.appendChild(fallback);
+          fallback.select();
+          document.execCommand('copy');
+          fallback.remove();
+        }
+        setHint('Macro copied to clipboard.', 'success');
+      } catch (err) {
+        setHint('Clipboard copy failed. Try again.', 'danger');
+      }
+    }
+
+    toggle.addEventListener('click', function() {
+      setOpen(panel.hidden);
+      if (!panel.hidden) {
+        loadMacros();
+      }
+    });
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function() {
+        setOpen(false);
+      });
+    }
+
+    searchBtn.addEventListener('click', loadMacros);
+    searchInput.addEventListener('keydown', function(event) {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        loadMacros();
+      }
+    });
+
+    copyBtn.addEventListener('click', copySelectedMacro);
+
+    document.addEventListener('click', function(event) {
+      if (!widget.classList.contains('is-open')) {
+        return;
+      }
+      if (!widget.contains(event.target)) {
+        setOpen(false);
+      }
+    });
+  })();
 </script>
 {% block extra_scripts %}{% endblock %}
 </body>

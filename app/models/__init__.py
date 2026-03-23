@@ -17,3 +17,7 @@ from app.models.comment_attachment  import CommentAttachment          # noqa: F4
 from app.models.comment_vote        import CommentVote                # noqa: F401
 from app.models.user_preference     import UserPreference             # noqa: F401
 from app.models.pending_registration import PendingRegistration       # noqa: F401
+from app.models.ticket_chat_message import TicketChatMessage          # noqa: F401
+from app.models.ticket_chat_attachment import TicketChatAttachment    # noqa: F401
+from app.models.ticket_chat_presence import TicketChatPresence        # noqa: F401
+from app.models.staff_macro         import StaffMacro                 # noqa: F401

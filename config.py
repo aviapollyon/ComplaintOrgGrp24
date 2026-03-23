@@ -55,6 +55,9 @@ class Config:
     POLL_TIMEOUT_SECONDS = int(os.environ.get('POLL_TIMEOUT_SECONDS', 8))
     POLL_MAX_BACKOFF_SECONDS = int(os.environ.get('POLL_MAX_BACKOFF_SECONDS', 30))
     POLL_BATCH_LIMIT = int(os.environ.get('POLL_BATCH_LIMIT', 20))
+    CHAT_EMAIL_NOTIFY = os.environ.get('CHAT_EMAIL_NOTIFY', 'true').lower() == 'true'
+    CHAT_EMAIL_COOLDOWN_SECONDS = int(os.environ.get('CHAT_EMAIL_COOLDOWN_SECONDS', 120))
+    CHAT_ONLINE_WINDOW_SECONDS = int(os.environ.get('CHAT_ONLINE_WINDOW_SECONDS', 60))
 
     # Password reset
     RESET_TOKEN_TTL_SECONDS = int(os.environ.get('RESET_TOKEN_TTL_SECONDS', 3600))

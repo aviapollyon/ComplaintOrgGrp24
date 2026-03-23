@@ -3,6 +3,7 @@
 {% block title %}Ticket #{{ ticket.TicketId }} — DUT Grievance Portal{% endblock %}
 
 {% block content %}
+{% set messaging_locked = ticket.Status.value in ['Resolved', 'Rejected'] %}
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{{ url_for('student.dashboard') }}">Dashboard</a></li>
@@ -174,7 +175,19 @@
                     role="tab"
                     aria-controls="activity-pane"
                     aria-selected="true">
-              <i class="bi bi-clock-history me-1"></i>Activity &amp; Messages
+              <i class="bi bi-clipboard2-pulse me-1"></i>Status Updates
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link"
+                    id="student-livechat-tab"
+                    data-bs-toggle="tab"
+                    data-bs-target="#student-livechat-pane"
+                    type="button"
+                    role="tab"
+                    aria-controls="student-livechat-pane"
+                    aria-selected="false">
+              <i class="bi bi-broadcast me-1"></i>Live Chat
             </button>
           </li>
           {% endif %}
@@ -200,6 +213,22 @@
                 <span class="small text-muted">{{ update.Comment }}</span>
                 {% if update.StatusChange %}
                   {{ update_status_badge(update.StatusChange.value) }}
+                {% endif %}
+                {% if update.attachments.count() %}
+                <div class="mt-2 d-flex flex-wrap gap-2">
+                  {% for a in update.attachments.all() %}
+                  {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
+                  {% if ext in ['png', 'jpg', 'jpeg', 'gif', 'webp'] %}
+                  <a href="{{ attachment_url(a) }}" target="_blank" class="d-inline-block">
+                    <img src="{{ attachment_url(a) }}" alt="{{ a.FileName }}" class="img-thumbnail" style="max-height: 100px; max-width: 150px; object-fit: cover;"/>
+                  </a>
+                  {% else %}
+                  <a href="{{ attachment_url(a) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-paperclip me-1"></i>{{ a.FileName }}
+                  </a>
+                  {% endif %}
+                  {% endfor %}
+                </div>
                 {% endif %}
                 <div class="text-muted" style="font-size:0.72rem;">
                   {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
@@ -248,7 +277,7 @@
                         {{ update.author.FullName }}
                         <span class="badge bg-primary ms-1 comment-role-tag" style="font-size:0.65rem;">
                           {% if update.IsReplyThread %}
-                            <i class="bi bi-chat-left-dots me-1"></i>Reply Thread
+                            <i class="bi bi-chat-left-dots me-1"></i>Legacy Thread
                           {% else %}
                             Staff
                           {% endif %}
@@ -261,6 +290,22 @@
                     <p class="mb-2 small">{{ update.Comment }}</p>
                     {% if update.StatusChange %}
                       {{ update_status_badge(update.StatusChange.value) }}
+                    {% endif %}
+                    {% if update.attachments.count() %}
+                    <div class="mt-2 d-flex flex-wrap gap-2">
+                      {% for a in update.attachments.all() %}
+                      {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
+                      {% if ext in ['png', 'jpg', 'jpeg', 'gif', 'webp'] %}
+                      <a href="{{ attachment_url(a) }}" target="_blank" class="d-inline-block">
+                        <img src="{{ attachment_url(a) }}" alt="{{ a.FileName }}" class="img-thumbnail" style="max-height: 100px; max-width: 150px; object-fit: cover;"/>
+                      </a>
+                      {% else %}
+                      <a href="{{ attachment_url(a) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-paperclip me-1"></i>{{ a.FileName }}
+                      </a>
+                      {% endif %}
+                      {% endfor %}
+                    </div>
                     {% endif %}
                   </div>
 
@@ -365,6 +410,22 @@
                     </span>
                   </div>
                   <p class="mb-0 small">{{ update.Comment }}</p>
+                  {% if update.attachments.count() %}
+                  <div class="mt-2 d-flex flex-wrap gap-2">
+                    {% for a in update.attachments.all() %}
+                    {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
+                    {% if ext in ['png', 'jpg', 'jpeg', 'gif', 'webp'] %}
+                    <a href="{{ attachment_url(a) }}" target="_blank" class="d-inline-block">
+                      <img src="{{ attachment_url(a) }}" alt="{{ a.FileName }}" class="img-thumbnail" style="max-height: 100px; max-width: 150px; object-fit: cover;"/>
+                    </a>
+                    {% else %}
+                    <a href="{{ attachment_url(a) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                      <i class="bi bi-paperclip me-1"></i>{{ a.FileName }}
+                    </a>
+                    {% endif %}
+                    {% endfor %}
+                  </div>
+                  {% endif %}
                 </div>
               </div>
               <div class="rounded-circle bg-secondary text-white d-flex align-items-center
@@ -383,6 +444,12 @@
           {% endif %}
 
           <div class="tab-pane fade {% if not is_owner %}show active{% endif %}" id="comments-pane" role="tabpanel" aria-labelledby="comments-tab">
+            {% if messaging_locked %}
+            <div class="alert alert-secondary py-2 small">
+              <i class="bi bi-lock-fill me-1"></i>
+              Student comments are closed because this ticket is {{ ticket.Status.value }}.
+            </div>
+            {% else %}
             <form method="POST" action="{{ url_for('student.add_ticket_comment', ticket_id=ticket.TicketId) }}" class="mb-3" enctype="multipart/form-data">
               {{ comment_form.hidden_tag() }}
               <input type="hidden" name="parent_comment_id" value=""/>
@@ -399,6 +466,7 @@
                 <i class="bi bi-chat-left-text me-1"></i>Post Comment
               </button>
             </form>
+            {% endif %}
 
             {% if student_comments %}
               {% for c in student_comments %}
@@ -430,6 +498,7 @@
                   </button>
                 </form>
 
+                {% if not messaging_locked %}
                 <button class="btn btn-sm btn-outline-secondary ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#replyForm_{{ c.CommentId }}" aria-expanded="false" aria-controls="replyForm_{{ c.CommentId }}">
                   <i class="bi bi-reply me-1"></i>Reply
                 </button>
@@ -452,6 +521,7 @@
                     </button>
                   </form>
                 </div>
+                {% endif %}
 
                 {% for reply in c.replies.all() %}
                 <div class="border rounded p-2 mt-2 ms-3 bg-light">
@@ -487,6 +557,74 @@
               <p class="text-muted small mb-0">No comments yet.</p>
             {% endif %}
           </div>
+
+          {% if is_owner %}
+          <div class="tab-pane fade" id="student-livechat-pane" role="tabpanel" aria-labelledby="student-livechat-tab">
+            {% if messaging_locked %}
+            <div class="alert alert-secondary py-2 small">
+              <i class="bi bi-lock-fill me-1"></i>
+              Live chat is closed because this ticket is {{ ticket.Status.value }}.
+            </div>
+            {% endif %}
+            <div class="border rounded p-2 mb-3 bg-light-subtle">
+              <div class="small text-muted mb-2">Users involved in chat</div>
+              <div class="d-flex flex-wrap gap-2" id="studentChatParticipants">
+                {% if chat_participants %}
+                  {% for p in chat_participants %}
+                  <span class="badge {{ 'text-bg-success' if p.is_online else 'text-bg-secondary' }}">
+                    {{ p.name }} ({{ p.role }})
+                  </span>
+                  {% endfor %}
+                {% else %}
+                  <span class="small text-muted">No participants yet.</span>
+                {% endif %}
+              </div>
+            </div>
+
+            <div id="studentChatList" class="border rounded p-2 mb-3" style="max-height: 360px; overflow-y: auto;">
+              {% if chat_messages %}
+                {% for msg in chat_messages %}
+                <div class="mb-2 pb-2 border-bottom">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold small">{{ msg.author.FullName if msg.author else 'Unknown' }} <span class="text-muted">({{ msg.author.Role.value if msg.author else 'Unknown' }})</span></span>
+                    <span class="text-muted" style="font-size:0.72rem;">{{ msg.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
+                  </div>
+                  <div class="small">{{ msg.Message }}</div>
+                  {% if msg.attachments.count() %}
+                  <div class="mt-1 d-flex flex-wrap gap-2">
+                    {% for a in msg.attachments.all() %}
+                    <a href="{{ attachment_url(a) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                      <i class="bi bi-paperclip me-1"></i>{{ a.FileName }}
+                    </a>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+                </div>
+                {% endfor %}
+              {% else %}
+                <p class="text-muted small mb-0">No live chat messages yet.</p>
+              {% endif %}
+            </div>
+
+            {% if not messaging_locked %}
+            <form method="POST" action="{{ url_for('student.send_chat_message', ticket_id=ticket.TicketId) }}" enctype="multipart/form-data">
+              {{ live_chat_form.hidden_tag() }}
+              <div class="mb-2">
+                {{ live_chat_form.message(class="form-control form-control-sm", rows=2, id='studentLiveChatMessage') }}
+                <div class="form-text">Required: 1 to 2000 characters. Current: <span id="studentLiveChatCount">0</span>.</div>
+              </div>
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <label class="btn btn-sm btn-outline-secondary mb-0">
+                  <i class="bi bi-paperclip me-1"></i>Add Attachments
+                  {{ live_chat_form.attachments(class="d-none", multiple=True, id='fileInput_student_live_chat') }}
+                </label>
+                <div id="selectedFiles_fileInput_student_live_chat" class="small text-muted text-truncate" style="max-width: 58%;">No files selected</div>
+                {{ live_chat_form.submit(class="btn btn-sm btn-primary ms-auto") }}
+              </div>
+            </form>
+            {% endif %}
+          </div>
+          {% endif %}
         </div>
       </div>
     </div>
@@ -501,7 +639,7 @@
     <div class="alert alert-warning">
       <i class="bi bi-question-circle-fill me-2"></i>
       <strong>More information needed.</strong><br>
-      <span class="small">Please reply to the <strong>Reply Thread</strong> message above.</span>
+      <span class="small">Please provide the requested details in <strong>Live Chat</strong> and review <strong>Status Updates</strong>.</span>
     </div>
     {% endif %}
 
@@ -651,5 +789,117 @@ if (stars.length) {
     });
   });
 }
+
+(() => {
+  const chatMessageInput = document.getElementById('studentLiveChatMessage');
+  const chatCount = document.getElementById('studentLiveChatCount');
+  if (chatMessageInput && chatCount) {
+    const renderChatCount = () => {
+      chatCount.textContent = String((chatMessageInput.value || '').trim().length);
+    };
+    chatMessageInput.addEventListener('input', renderChatCount);
+    renderChatCount();
+  }
+
+  const ticketId = {{ ticket.TicketId }};
+  const tabButtons = Array.from(document.querySelectorAll('button[data-bs-toggle="tab"][data-bs-target]'));
+  const tabTargets = new Set(tabButtons.map((btn) => btn.getAttribute('data-bs-target')));
+  const tabStorageKey = `student-ticket-tab:${ticketId}`;
+
+  const showTabTarget = (target) => {
+    if (!target || !tabTargets.has(target) || !window.bootstrap?.Tab) return;
+    const targetBtn = tabButtons.find((btn) => btn.getAttribute('data-bs-target') === target);
+    if (targetBtn) {
+      new bootstrap.Tab(targetBtn).show();
+    }
+  };
+
+  if (tabButtons.length) {
+    const hashTarget = window.location.hash && tabTargets.has(window.location.hash)
+      ? window.location.hash
+      : '';
+    const savedTarget = localStorage.getItem(tabStorageKey);
+    if (hashTarget) {
+      showTabTarget(hashTarget);
+    } else if (savedTarget && tabTargets.has(savedTarget)) {
+      showTabTarget(savedTarget);
+    }
+
+    tabButtons.forEach((btn) => {
+      btn.addEventListener('shown.bs.tab', (event) => {
+        const currentTarget = event.target?.getAttribute('data-bs-target');
+        if (!currentTarget) return;
+        localStorage.setItem(tabStorageKey, currentTarget);
+        if (window.location.hash !== currentTarget) {
+          history.replaceState(null, '', `${window.location.pathname}${window.location.search}${currentTarget}`);
+        }
+      });
+    });
+  }
+
+  const chatList = document.getElementById('studentChatList');
+  const participantsWrap = document.getElementById('studentChatParticipants');
+  if (!chatList) return;
+
+  let sinceId = {% if chat_messages %}{{ chat_messages[-1].ChatMessageId }}{% else %}0{% endif %};
+
+  const escapeHtml = (value) => {
+    const div = document.createElement('div');
+    div.textContent = value || '';
+    return div.innerHTML;
+  };
+
+  const renderParticipants = (participants) => {
+    if (!participantsWrap || !Array.isArray(participants)) return;
+    if (!participants.length) {
+      participantsWrap.innerHTML = '<span class="small text-muted">No participants yet.</span>';
+      return;
+    }
+    participantsWrap.innerHTML = participants.map((p) => {
+      const cls = p.is_online ? 'text-bg-success' : 'text-bg-secondary';
+      return `<span class="badge ${cls}">${escapeHtml(p.name)} (${escapeHtml(p.role)})</span>`;
+    }).join('');
+  };
+
+  const appendMessage = (msg) => {
+    const attachments = (msg.attachments || []).map((a) => (
+      `<a href="${a.url}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-paperclip me-1"></i>${escapeHtml(a.name)}</a>`
+    )).join('');
+    const row = document.createElement('div');
+    row.className = 'mb-2 pb-2 border-bottom';
+    row.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small">${escapeHtml(msg.author_name)} <span class="text-muted">(${escapeHtml(msg.author_role)})</span></span>
+        <span class="text-muted" style="font-size:0.72rem;">${new Date(msg.created_at).toLocaleString()}</span>
+      </div>
+      <div class="small">${escapeHtml(msg.message)}</div>
+      ${attachments ? `<div class="mt-1 d-flex flex-wrap gap-2">${attachments}</div>` : ''}
+    `;
+    chatList.appendChild(row);
+    chatList.scrollTop = chatList.scrollHeight;
+  };
+
+  const poll = async () => {
+    try {
+      const response = await fetch(`{{ url_for('student.list_chat_messages', ticket_id=ticket.TicketId) }}?since_id=${sinceId}`, { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const data = await response.json();
+      (data.messages || []).forEach((msg) => {
+        appendMessage(msg);
+        sinceId = Math.max(sinceId, Number(msg.chat_message_id || 0));
+      });
+      renderParticipants(data.participants || []);
+      await fetch(`{{ url_for('student.chat_heartbeat', ticket_id=ticket.TicketId) }}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+    } catch (err) {
+      console.debug('student chat poll skipped', err);
+    }
+  };
+
+  setInterval(poll, 7000);
+})();
 </script>
 {% endblock %}

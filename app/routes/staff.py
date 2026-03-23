@@ -1,13 +1,18 @@
 from flask import (
     Blueprint, render_template, redirect, url_for,
-    flash, request, abort
+    flash, request, abort, jsonify, current_app
 )
 from flask_login import login_required, current_user
 from datetime import datetime
+import os
 
 from app import db
 from app.models.ticket            import Ticket, StatusEnum, PriorityEnum
 from app.models.ticket_update     import TicketUpdate, UpdateStatusEnum
+from app.models.ticket_chat_message import TicketChatMessage
+from app.models.ticket_chat_attachment import TicketChatAttachment
+from app.models.ticket_chat_presence import TicketChatPresence
+from app.models.staff_macro       import StaffMacro
 from app.models.department        import Department
 from app.models.escalation        import EscalationRequest
 from app.models.reassignment_request import ReassignmentRequest
@@ -16,11 +21,11 @@ from app.models.user              import User, RoleEnum
 from app.models.ticket_comment    import TicketComment
 from app.models.ticket_flag       import TicketFlag, FlaggedTicket
 from app.utils.decorators         import role_required
-from app.utils.helpers            import CATEGORY_KEYWORDS, CATEGORY_SUBCATEGORY_MAP
+from app.utils.helpers            import CATEGORY_KEYWORDS, CATEGORY_SUBCATEGORY_MAP, allowed_file, attachment_url
 from app.services.notifications   import (
     notify_status_update, notify_staff_reply,
     notify_ticket_resolved, notify_ticket_rejected,
-    notify_progress_update, notify_sla_breach,
+    notify_progress_update, notify_sla_breach, notify_live_chat_message,
 )
 from app.services.realtime import publish_user_event
 from app.forms.staff_forms import (
@@ -28,6 +33,7 @@ from app.forms.staff_forms import (
     ReplyForm, StaffThreadReplyForm,
     EscalationRequestForm, StaffReassignmentRequestForm,
     StaffTicketFilterForm, UpdatePriorityForm,
+    LiveChatMessageForm, StaffMacroForm,
 )
 from app.forms.student_forms import TicketCommentForm
 
@@ -37,6 +43,13 @@ staff_bp = Blueprint('staff', __name__)
 def _resolve_view_mode(default='list'):
     mode = request.args.get('view', default, type=str).strip().lower()
     return mode if mode in ('list', 'compact') else default
+
+
+def _ticket_action_redirect(ticket_id: int):
+    referrer = (request.referrer or '').lower()
+    if referrer.endswith(f'/staff/ticket/{ticket_id}/actions'):
+        return redirect(url_for('staff.ticket_actions', ticket_id=ticket_id))
+    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 
 def _publish_ticket_activity(ticket: Ticket, action: str, actor_id: int, extra: dict = None):
@@ -62,6 +75,7 @@ def _publish_ticket_activity(ticket: Ticket, action: str, actor_id: int, extra: 
 
 _STATUS_MAP = {
     'In Progress': (StatusEnum.InProgress, UpdateStatusEnum.InProgress),
+    'Pending Info': (StatusEnum.PendingInfo, UpdateStatusEnum.PendingInfo),
     'Rejected'   : (StatusEnum.Rejected,   UpdateStatusEnum.Rejected),
 }
 
@@ -93,6 +107,150 @@ def _suggest_priority(ticket: Ticket) -> str:
 
 def _priority_gate_blocked(ticket: Ticket) -> bool:
     return ticket.Priority is None
+
+
+def _is_terminal_ticket_status(ticket: Ticket) -> bool:
+    return ticket.Status in {StatusEnum.Resolved, StatusEnum.Rejected}
+
+
+def _blocked_terminal_action_redirect(ticket: Ticket):
+    if not _is_terminal_ticket_status(ticket):
+        return None
+    flash(f'Ticket is already {ticket.Status.value}. Actions are disabled.', 'warning')
+    return _ticket_action_redirect(ticket.TicketId)
+
+
+CHAT_BATCH_LIMIT = 40
+
+
+def _save_update_attachments(update_id: int):
+    for file in request.files.getlist('attachments'):
+        if file and file.filename and allowed_file(file.filename):
+            from werkzeug.utils import secure_filename
+
+            upload_root = current_app.config['UPLOAD_FOLDER']
+            update_dir = os.path.join(upload_root, f'update_{update_id}')
+            os.makedirs(update_dir, exist_ok=True)
+
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(update_dir, filename)
+            file.save(filepath)
+            from app.models.attachment import Attachment
+
+            db.session.add(Attachment(UpdateId=update_id, FileName=filename, FilePath=filepath))
+
+
+def _chat_related_staff_ids(ticket: Ticket) -> set[int]:
+    related = set()
+
+    reassign_rows = ReassignmentRequest.query.filter(
+        ReassignmentRequest.TicketId == ticket.TicketId,
+        db.or_(
+            ReassignmentRequest.RequestedById.isnot(None),
+            ReassignmentRequest.TargetStaffId.isnot(None),
+        ),
+    ).all()
+    for row in reassign_rows:
+        if row.RequestedById:
+            related.add(row.RequestedById)
+        if row.TargetStaffId:
+            related.add(row.TargetStaffId)
+
+    escalation_rows = EscalationRequest.query.filter(
+        EscalationRequest.TicketId == ticket.TicketId,
+        EscalationRequest.RequestedById.isnot(None),
+    ).all()
+    for row in escalation_rows:
+        related.add(row.RequestedById)
+
+    return related
+
+
+def _chat_participant_ids(ticket: Ticket) -> set[int]:
+    participant_ids = {ticket.StudentId}
+    if ticket.StaffId:
+        participant_ids.add(ticket.StaffId)
+    participant_ids.update(_chat_related_staff_ids(ticket))
+
+    admin_ids = [u.UserId for u in User.query.filter_by(Role=RoleEnum.Admin, IsActive=True).all()]
+    participant_ids.update(admin_ids)
+    return {uid for uid in participant_ids if uid}
+
+
+def _chat_notification_targets(ticket: Ticket, sender_id: int) -> tuple[set[int], set[int]]:
+    participants = _chat_participant_ids(ticket)
+    related_staff = _chat_related_staff_ids(ticket)
+
+    recipients = {uid for uid in participants if uid != sender_id}
+    notification_blocked = {
+        uid for uid in related_staff
+        if uid not in {ticket.StaffId, ticket.StudentId} and uid != sender_id
+    }
+    recipients -= notification_blocked
+    return recipients, notification_blocked
+
+
+def _can_access_chat(ticket: Ticket, user_id: int) -> bool:
+    return user_id in _chat_participant_ids(ticket)
+
+
+def _touch_chat_presence(ticket_id: int, user_id: int):
+    presence = TicketChatPresence.query.filter_by(TicketId=ticket_id, UserId=user_id).first()
+    if not presence:
+        presence = TicketChatPresence(TicketId=ticket_id, UserId=user_id, LastSeenAt=datetime.utcnow())
+        db.session.add(presence)
+    else:
+        presence.LastSeenAt = datetime.utcnow()
+
+
+def _serialize_chat_message(message: TicketChatMessage) -> dict:
+    return {
+        'chat_message_id': message.ChatMessageId,
+        'ticket_id': message.TicketId,
+        'user_id': message.UserId,
+        'author_name': message.author.FullName if message.author else 'Unknown',
+        'author_role': message.author.Role.value if message.author and message.author.Role else 'Unknown',
+        'message': message.Message,
+        'created_at': message.CreatedAt.isoformat() if message.CreatedAt else None,
+        'attachments': [
+            {
+                'name': a.FileName,
+                'url': attachment_url(a),
+            }
+            for a in message.attachments.order_by(TicketChatAttachment.ChatAttachmentId.asc()).all()
+        ],
+    }
+
+
+def _chat_participant_badges(ticket: Ticket) -> list[dict]:
+    participants = (
+        db.session.query(User, db.func.max(TicketChatPresence.LastSeenAt).label('last_seen'))
+        .join(TicketChatMessage, TicketChatMessage.UserId == User.UserId)
+        .outerjoin(
+            TicketChatPresence,
+            db.and_(
+                TicketChatPresence.UserId == User.UserId,
+                TicketChatPresence.TicketId == ticket.TicketId,
+            ),
+        )
+        .filter(TicketChatMessage.TicketId == ticket.TicketId)
+        .group_by(User.UserId)
+        .order_by(User.FullName.asc())
+        .all()
+    )
+
+    online_window = int(current_app.config.get('CHAT_ONLINE_WINDOW_SECONDS', 60))
+    cutoff = datetime.utcnow().timestamp() - online_window
+    badges = []
+    for user, last_seen in participants:
+        online = bool(last_seen and last_seen.timestamp() >= cutoff)
+        badges.append({
+            'user_id': user.UserId,
+            'name': user.FullName,
+            'role': user.Role.value,
+            'is_online': online,
+        })
+    return badges
 
 
 @staff_bp.route('/recurring-issues')
@@ -383,6 +541,99 @@ def dashboard():
         'new_tickets': len(new_ticket_ids),
     }
 
+    def _format_minutes(minutes: int) -> str:
+        total = max(int(minutes), 0)
+        hours, mins = divmod(total, 60)
+        if hours and mins:
+            return f'{hours}h {mins}m'
+        if hours:
+            return f'{hours}h'
+        return f'{mins}m'
+
+    now = datetime.utcnow()
+    sla_watchlist = []
+
+    for t in all_assigned:
+        if t.Status in (StatusEnum.Resolved, StatusEnum.Rejected):
+            continue
+
+        first_due = t.first_response_due_at
+        resolution_due = t.resolution_due_at
+
+        if t.is_resolution_sla_overdue:
+            overdue_min = int((now - resolution_due).total_seconds() // 60)
+            sla_watchlist.append({
+                'ticket': t,
+                'level': 'resolution_overdue',
+                'title': 'Resolution SLA breached',
+                'time_text': f'Overdue by {_format_minutes(overdue_min)}',
+                'sort_rank': 0,
+                'sort_metric': -overdue_min,
+            })
+            continue
+
+        if t.is_response_sla_overdue:
+            overdue_min = int((now - first_due).total_seconds() // 60)
+            sla_watchlist.append({
+                'ticket': t,
+                'level': 'response_overdue',
+                'title': 'First response SLA breached',
+                'time_text': f'Overdue by {_format_minutes(overdue_min)}',
+                'sort_rank': 1,
+                'sort_metric': -overdue_min,
+            })
+            continue
+
+        first_response_remaining = float('inf')
+        if not t.has_staff_response:
+            first_response_remaining = (first_due - now).total_seconds() / 60
+        resolution_remaining = (resolution_due - now).total_seconds() / 60
+
+        if first_response_remaining <= resolution_remaining:
+            due_minutes = int(max(first_response_remaining, 0))
+            level = 'response_risk'
+            title = 'First response SLA risk'
+        else:
+            due_minutes = int(max(resolution_remaining, 0))
+            level = 'resolution_risk'
+            title = 'Resolution SLA risk'
+
+        sla_watchlist.append({
+            'ticket': t,
+            'level': level,
+            'title': title,
+            'time_text': f'Due in {_format_minutes(due_minutes)}',
+            'sort_rank': 2,
+            'sort_metric': due_minutes,
+        })
+
+    sla_watchlist.sort(key=lambda row: (row['sort_rank'], row['sort_metric']))
+
+    if not sla_watchlist:
+        fallback_tickets = sorted(all_assigned, key=lambda t: t.UpdatedAt or datetime.min, reverse=True)
+        for t in fallback_tickets[:8]:
+            label = 'Recently resolved' if t.Status == StatusEnum.Resolved else (
+                'Recently rejected' if t.Status == StatusEnum.Rejected else 'Needs monitoring'
+            )
+            sla_watchlist.append({
+                'ticket': t,
+                'level': 'fallback',
+                'title': label,
+                'time_text': f'Updated {t.UpdatedAt.strftime("%d %b %Y %H:%M") if t.UpdatedAt else "recently"}',
+                'sort_rank': 9,
+                'sort_metric': 0,
+            })
+
+    if not sla_watchlist:
+        sla_watchlist.append({
+            'ticket': None,
+            'level': 'empty',
+            'title': 'No assigned tickets yet',
+            'time_text': 'Tickets assigned to you will appear here.',
+            'sort_rank': 10,
+            'sort_metric': 0,
+        })
+
     category_options = list(CATEGORY_SUBCATEGORY_MAP.keys())
     if selected_categories:
         available_subcategories = sorted({
@@ -405,6 +656,7 @@ def dashboard():
         selected_subcategories=selected_subcategories,
         subcategory_map=CATEGORY_SUBCATEGORY_MAP,
         stats=stats,
+        sla_watchlist=sla_watchlist,
         flagged_ticket_ids=flagged_ids,
         active_flags=active_flags,
         ticket_active_flags=ticket_active_flags,
@@ -544,7 +796,15 @@ def view_ticket(ticket_id):
     resolve_form      = ResolveTicketForm()
     reply_form        = ReplyForm()
     thread_reply_form = StaffThreadReplyForm()
+    live_chat_form    = LiveChatMessageForm()
     comment_form      = TicketCommentForm()
+
+    chat_messages = (TicketChatMessage.query
+                     .filter_by(TicketId=ticket.TicketId)
+                     .order_by(TicketChatMessage.ChatMessageId.asc())
+                     .limit(100)
+                     .all())
+    chat_participants = _chat_participant_badges(ticket)
 
     if ticket.Priority:
         priority_form.priority.data = ticket.Priority.value
@@ -583,7 +843,10 @@ def view_ticket(ticket_id):
         resolve_form=resolve_form,
         reply_form=reply_form,
         thread_reply_form=thread_reply_form,
+        live_chat_form=live_chat_form,
         comment_form=comment_form,
+        chat_messages=chat_messages,
+        chat_participants=chat_participants,
         escalation_form=escalation_form,
         pending_escalation=pending_escalation,
         reassign_form=reassign_form,
@@ -600,24 +863,31 @@ def view_ticket(ticket_id):
 @role_required('Staff')
 def update_ticket(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
+    locked_redirect = _blocked_terminal_action_redirect(ticket)
+    if locked_redirect:
+        return locked_redirect
+
     form   = UpdateTicketForm()
     if form.validate_on_submit():
         if _priority_gate_blocked(ticket) and form.status.data == 'In Progress':
             flash('Set ticket priority before moving status to In Progress.', 'warning')
-            return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+            return _ticket_action_redirect(ticket_id)
 
         mapping = _STATUS_MAP.get(form.status.data)
         if not mapping:
             flash('Invalid status.', 'danger')
-            return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+            return _ticket_action_redirect(ticket_id)
         new_status, new_update_status = mapping
         ticket.Status    = new_status
         ticket.UpdatedAt = datetime.utcnow()
-        db.session.add(TicketUpdate(
+        update_row = TicketUpdate(
             TicketId=ticket.TicketId, UserId=current_user.UserId,
             Comment=form.comment.data.strip(), StatusChange=new_update_status,
             IsReplyThread=False,
-        ))
+        )
+        db.session.add(update_row)
+        db.session.flush()
+        _save_update_attachments(update_row.UpdateId)
         if new_status == StatusEnum.InProgress:
             notify_progress_update(ticket, current_user)
         elif new_status == StatusEnum.Rejected:
@@ -629,7 +899,7 @@ def update_ticket(ticket_id):
         flash(f'Status updated to "{form.status.data}".', 'success')
     else:
         flash('Please fill in all required fields.', 'danger')
-    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+    return _ticket_action_redirect(ticket_id)
 
 
 @staff_bp.route('/ticket/<int:ticket_id>/update-priority', methods=['POST'])
@@ -637,6 +907,10 @@ def update_ticket(ticket_id):
 @role_required('Staff')
 def update_ticket_priority(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
+    locked_redirect = _blocked_terminal_action_redirect(ticket)
+    if locked_redirect:
+        return locked_redirect
+
     form   = UpdatePriorityForm()
     if form.validate_on_submit():
         old_priority = ticket.Priority.value if ticket.Priority else 'Not Set'
@@ -656,7 +930,7 @@ def update_ticket_priority(ticket_id):
         flash(f'Priority updated to "{form.priority.data}".', 'success')
     else:
         flash('Please select a priority and provide a reason (min 5 characters).', 'danger')
-    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+    return _ticket_action_redirect(ticket_id)
 
 
 @staff_bp.route('/ticket/<int:ticket_id>/resolve', methods=['POST'])
@@ -664,89 +938,48 @@ def update_ticket_priority(ticket_id):
 @role_required('Staff')
 def resolve_ticket(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
+    locked_redirect = _blocked_terminal_action_redirect(ticket)
+    if locked_redirect:
+        return locked_redirect
+
     form   = ResolveTicketForm()
     if form.validate_on_submit():
         ticket.Status     = StatusEnum.Resolved
         ticket.ResolvedAt = datetime.utcnow()
         ticket.UpdatedAt  = datetime.utcnow()
-        db.session.add(TicketUpdate(
+        update_row = TicketUpdate(
             TicketId=ticket.TicketId, UserId=current_user.UserId,
             Comment=f'[RESOLVED] {form.resolution.data.strip()}',
             StatusChange=UpdateStatusEnum.Resolved, IsReplyThread=False,
-        ))
+        )
+        db.session.add(update_row)
+        db.session.flush()
+        _save_update_attachments(update_row.UpdateId)
         notify_ticket_resolved(ticket, current_user)
         db.session.commit()
         _publish_ticket_activity(ticket, 'ticket_resolved', current_user.UserId)
         flash('Ticket marked as resolved.', 'success')
     else:
         flash('Please provide resolution details.', 'danger')
-    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+    return _ticket_action_redirect(ticket_id)
 
 
 @staff_bp.route('/ticket/<int:ticket_id>/reply', methods=['POST'])
 @login_required
 @role_required('Staff')
 def reply_ticket(ticket_id):
-    ticket = _get_staff_ticket(ticket_id)
-    if _priority_gate_blocked(ticket):
-        flash('Set ticket priority before posting internal activity updates.', 'warning')
-        return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
-
-    form   = ReplyForm()
-    if form.validate_on_submit():
-        ticket.Status    = StatusEnum.PendingInfo
-        ticket.UpdatedAt = datetime.utcnow()
-        update = TicketUpdate(
-            TicketId=ticket.TicketId, UserId=current_user.UserId,
-            Comment=form.comment.data.strip(),
-            StatusChange=UpdateStatusEnum.PendingInfo, IsReplyThread=True,
-        )
-        db.session.add(update)
-        notify_staff_reply(ticket, current_user)
-        db.session.commit()
-        _publish_ticket_activity(ticket, 'ticket_reply_added', current_user.UserId)
-        flash('Reply sent. Status set to Pending Info.', 'success')
-    else:
-        flash('Message cannot be empty.', 'danger')
-    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+    _get_staff_ticket(ticket_id)
+    flash('Reply threads have moved to Live Chat. Use the Live Chat tab for staff-student conversation.', 'info')
+    return _ticket_action_redirect(ticket_id)
 
 
 @staff_bp.route('/ticket/<int:ticket_id>/thread-reply/<int:update_id>', methods=['POST'])
 @login_required
 @role_required('Staff')
 def thread_reply(ticket_id, update_id):
-    ticket, access_mode = _get_staff_ticket_access(ticket_id)
-    if access_mode == 'full' and _priority_gate_blocked(ticket):
-        flash('Set ticket priority before posting internal activity updates.', 'warning')
-        return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
-
-    parent = TicketUpdate.query.get_or_404(update_id)
-    if parent.TicketId != ticket_id:
-        abort(403)
-    if not parent.IsReplyThread:
-        flash('Replies only allowed on reply threads.', 'warning')
-        return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
-
-    locked = _get_locked_thread_ids(ticket)
-    if update_id in locked:
-        flash('This thread has been closed after your progress update.', 'info')
-        return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
-
-    form = StaffThreadReplyForm()
-    if form.validate_on_submit():
-        reply = TicketUpdate(
-            TicketId=ticket_id, UserId=current_user.UserId,
-            Comment=form.comment.data.strip(),
-            ParentUpdateId=update_id, IsReplyThread=False,
-        )
-        db.session.add(reply)
-        ticket.UpdatedAt = datetime.utcnow()
-        notify_staff_reply(ticket, current_user)
-        db.session.commit()
-        _publish_ticket_activity(ticket, 'ticket_thread_reply_added', current_user.UserId)
-        flash('Reply added.', 'success')
-    else:
-        flash('Reply cannot be empty.', 'danger')
+    _get_staff_ticket_access(ticket_id)
+    _ = update_id
+    flash('Status Update reply threads are disabled for staff. Continue communication in Live Chat.', 'info')
     return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
 
 def _get_locked_thread_ids(ticket: Ticket) -> set:
@@ -769,11 +1002,241 @@ def _get_locked_thread_ids(ticket: Ticket) -> set:
             locked.add(thread.UpdateId)
     return locked
 
+
+@staff_bp.route('/ticket/<int:ticket_id>/actions')
+@login_required
+@role_required('Staff')
+def ticket_actions(ticket_id):
+    ticket = _get_staff_ticket(ticket_id)
+    actions_locked = _is_terminal_ticket_status(ticket)
+
+    update_form = UpdateTicketForm()
+    priority_form = UpdatePriorityForm()
+    resolve_form = ResolveTicketForm()
+
+    if ticket.Priority:
+        priority_form.priority.data = ticket.Priority.value
+
+    escalation_form = EscalationRequestForm()
+    other_depts = Department.query.filter(Department.DepartmentId != ticket.DepartmentId).order_by(Department.Name).all()
+    escalation_form.target_dept.choices = [(d.DepartmentId, d.Name) for d in other_depts]
+    pending_escalation = EscalationRequest.query.filter_by(TicketId=ticket_id, Status='Pending').first()
+
+    reassign_form = StaffReassignmentRequestForm()
+    dept_colleagues = User.query.filter(
+        User.Role == RoleEnum.Staff,
+        User.IsActive == True,  # noqa: E712
+        User.DepartmentId == current_user.DepartmentId,
+        User.UserId != current_user.UserId,
+    ).order_by(User.FullName).all()
+    reassign_form.target_staff.choices = [(u.UserId, u.FullName) for u in dept_colleagues]
+    pending_reassign = ReassignmentRequest.query.filter_by(TicketId=ticket_id, Status='Pending').first()
+
+    return render_template(
+        'staff/ticket_actions.html',
+        ticket=ticket,
+        actions_locked=actions_locked,
+        update_form=update_form,
+        priority_form=priority_form,
+        resolve_form=resolve_form,
+        escalation_form=escalation_form,
+        pending_escalation=pending_escalation,
+        reassign_form=reassign_form,
+        pending_reassign=pending_reassign,
+        suggested_priority=_suggest_priority(ticket),
+        priority_required=_priority_gate_blocked(ticket),
+    )
+
+
+@staff_bp.route('/ticket/<int:ticket_id>/chat/messages')
+@login_required
+@role_required('Staff')
+def list_chat_messages(ticket_id):
+    ticket, _ = _get_staff_ticket_access(ticket_id)
+    if not _can_access_chat(ticket, current_user.UserId):
+        abort(403)
+
+    since_id = request.args.get('since_id', default=0, type=int)
+    if since_id < 0:
+        since_id = 0
+
+    rows = (TicketChatMessage.query
+            .filter(TicketChatMessage.TicketId == ticket_id,
+                    TicketChatMessage.ChatMessageId > since_id)
+            .order_by(TicketChatMessage.ChatMessageId.asc())
+            .limit(CHAT_BATCH_LIMIT)
+            .all())
+
+    _touch_chat_presence(ticket_id, current_user.UserId)
+    db.session.commit()
+
+    next_since = since_id
+    if rows:
+        next_since = rows[-1].ChatMessageId
+
+    return jsonify({
+        'messages': [_serialize_chat_message(row) for row in rows],
+        'participants': _chat_participant_badges(ticket),
+        'next_since_id': next_since,
+    })
+
+
+@staff_bp.route('/ticket/<int:ticket_id>/chat/send', methods=['POST'])
+@login_required
+@role_required('Staff')
+def send_chat_message(ticket_id):
+    ticket, _ = _get_staff_ticket_access(ticket_id)
+    if not _can_access_chat(ticket, current_user.UserId):
+        abort(403)
+
+    if ticket.Status in (StatusEnum.Resolved, StatusEnum.Rejected):
+        flash('Live chat is closed for resolved or rejected tickets.', 'warning')
+        return redirect(url_for('staff.view_ticket', ticket_id=ticket_id, _anchor='staff-livechat-pane'))
+
+    form = LiveChatMessageForm()
+    if not form.validate_on_submit():
+        flash('Chat message must contain between 1 and 2000 characters.', 'danger')
+        return redirect(url_for('staff.view_ticket', ticket_id=ticket_id, _anchor='staff-livechat-pane'))
+
+    message = TicketChatMessage(
+        TicketId=ticket_id,
+        UserId=current_user.UserId,
+        Message=form.message.data.strip(),
+    )
+    db.session.add(message)
+    db.session.flush()
+
+    for file in request.files.getlist('attachments'):
+        if file and file.filename and allowed_file(file.filename):
+            from werkzeug.utils import secure_filename
+
+            upload_root = current_app.config['UPLOAD_FOLDER']
+            chat_dir = os.path.join(upload_root, f'chat_{message.ChatMessageId}')
+            os.makedirs(chat_dir, exist_ok=True)
+
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(chat_dir, filename)
+            file.save(filepath)
+            db.session.add(TicketChatAttachment(
+                ChatMessageId=message.ChatMessageId,
+                FileName=filename,
+                FilePath=filepath,
+            ))
+
+    _touch_chat_presence(ticket_id, current_user.UserId)
+    ticket.UpdatedAt = datetime.utcnow()
+
+    recipients, _ = _chat_notification_targets(ticket, current_user.UserId)
+    notify_live_chat_message(ticket, current_user, sorted(recipients))
+
+    db.session.commit()
+
+    payload = {
+        'ticket_id': ticket.TicketId,
+        'chat_message_id': message.ChatMessageId,
+        'sender_id': current_user.UserId,
+    }
+    for uid in _chat_participant_ids(ticket):
+        publish_user_event(uid, 'chat_message', payload)
+
+    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id, _anchor='staff-livechat-pane'))
+
+
+@staff_bp.route('/ticket/<int:ticket_id>/chat/heartbeat', methods=['POST'])
+@login_required
+@role_required('Staff')
+def chat_heartbeat(ticket_id):
+    ticket, _ = _get_staff_ticket_access(ticket_id)
+    if not _can_access_chat(ticket, current_user.UserId):
+        abort(403)
+
+    _touch_chat_presence(ticket_id, current_user.UserId)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+
+@staff_bp.route('/macros', methods=['GET', 'POST'])
+@login_required
+@role_required('Staff')
+def macros():
+    form = StaffMacroForm()
+    if form.validate_on_submit():
+        macro = StaffMacro(
+            UserId=current_user.UserId,
+            Name=form.name.data.strip(),
+            MacroType=form.macro_type.data.strip(),
+            Content=form.content.data.strip(),
+        )
+        db.session.add(macro)
+        db.session.commit()
+        flash('Macro saved.', 'success')
+        return redirect(url_for('staff.macros'))
+
+    q = request.args.get('q', '', type=str).strip()
+    macros_query = StaffMacro.query.filter_by(UserId=current_user.UserId)
+    if q:
+        macros_query = macros_query.filter(
+            db.or_(
+                StaffMacro.Name.ilike(f'%{q}%'),
+                StaffMacro.MacroType.ilike(f'%{q}%'),
+                StaffMacro.Content.ilike(f'%{q}%'),
+            )
+        )
+
+    macro_rows = macros_query.order_by(StaffMacro.UpdatedAt.desc()).all()
+    return render_template('staff/macros.html', form=form, macros=macro_rows, query=q)
+
+
+@staff_bp.route('/macros/<int:macro_id>/delete', methods=['POST'])
+@login_required
+@role_required('Staff')
+def delete_macro(macro_id):
+    macro = StaffMacro.query.get_or_404(macro_id)
+    if macro.UserId != current_user.UserId:
+        abort(403)
+    db.session.delete(macro)
+    db.session.commit()
+    flash('Macro deleted.', 'success')
+    return redirect(url_for('staff.macros'))
+
+
+@staff_bp.route('/macros/search')
+@login_required
+@role_required('Staff')
+def search_macros():
+    q = request.args.get('q', '', type=str).strip()
+    query = StaffMacro.query.filter_by(UserId=current_user.UserId)
+    if q:
+        query = query.filter(
+            db.or_(
+                StaffMacro.Name.ilike(f'%{q}%'),
+                StaffMacro.MacroType.ilike(f'%{q}%'),
+                StaffMacro.Content.ilike(f'%{q}%'),
+            )
+        )
+
+    rows = query.order_by(StaffMacro.UpdatedAt.desc()).limit(30).all()
+    return jsonify({
+        'items': [
+            {
+                'macro_id': row.MacroId,
+                'name': row.Name,
+                'macro_type': row.MacroType,
+                'content': row.Content,
+            }
+            for row in rows
+        ]
+    })
+
 @staff_bp.route('/ticket/<int:ticket_id>/escalate', methods=['POST'])
 @login_required
 @role_required('Staff')
 def request_escalation(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
+    locked_redirect = _blocked_terminal_action_redirect(ticket)
+    if locked_redirect:
+        return locked_redirect
+
     form   = EscalationRequestForm()
     other_depts = Department.query.filter(
         Department.DepartmentId != ticket.DepartmentId
@@ -783,7 +1246,7 @@ def request_escalation(ticket_id):
     if form.validate_on_submit():
         if EscalationRequest.query.filter_by(TicketId=ticket_id, Status='Pending').first():
             flash('An escalation is already pending.', 'warning')
-            return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+            return _ticket_action_redirect(ticket_id)
 
         target_dept = Department.query.get_or_404(form.target_dept.data)
         db.session.add(EscalationRequest(
@@ -818,7 +1281,7 @@ def request_escalation(ticket_id):
         flash('Escalation request submitted.', 'success')
     else:
         flash('Please fill in all escalation fields.', 'danger')
-    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+    return _ticket_action_redirect(ticket_id)
 
 
 # ── STAFF SELF-REASSIGNMENT REQUEST ──────────────────────────────────────────
@@ -827,6 +1290,10 @@ def request_escalation(ticket_id):
 @role_required('Staff')
 def request_reassignment(ticket_id):
     ticket = _get_staff_ticket(ticket_id)
+    locked_redirect = _blocked_terminal_action_redirect(ticket)
+    if locked_redirect:
+        return locked_redirect
+
     form   = StaffReassignmentRequestForm()
 
     dept_colleagues = User.query.filter(
@@ -841,7 +1308,7 @@ def request_reassignment(ticket_id):
         if ReassignmentRequest.query.filter_by(
                 TicketId=ticket_id, Status='Pending').first():
             flash('A reassignment request is already pending.', 'warning')
-            return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+            return _ticket_action_redirect(ticket_id)
 
         target = User.query.get_or_404(form.target_staff.data)
         db.session.add(ReassignmentRequest(
@@ -881,7 +1348,7 @@ def request_reassignment(ticket_id):
         flash('Reassignment request submitted to admin.', 'success')
     else:
         flash('Please fill in all reassignment fields.', 'danger')
-    return redirect(url_for('staff.view_ticket', ticket_id=ticket_id))
+    return _ticket_action_redirect(ticket_id)
 
 
 def _get_staff_ticket(ticket_id: int) -> Ticket:
@@ -912,7 +1379,6 @@ def _staff_has_restricted_access(ticket: Ticket) -> bool:
 
     reassignment_link = ReassignmentRequest.query.filter(
         ReassignmentRequest.TicketId == ticket.TicketId,
-        ReassignmentRequest.Status == 'Approved',
         db.or_(
             ReassignmentRequest.RequestedById == user_id,
             ReassignmentRequest.TargetStaffId == user_id,
@@ -923,7 +1389,6 @@ def _staff_has_restricted_access(ticket: Ticket) -> bool:
 
     escalation_link = EscalationRequest.query.filter_by(
         TicketId=ticket.TicketId,
-        Status='Approved',
         RequestedById=user_id,
     ).first() is not None
     return escalation_link

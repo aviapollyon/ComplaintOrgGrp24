@@ -3,6 +3,7 @@
 {% block title %}Ticket #{{ ticket.TicketId }} — Staff View{% endblock %}
 
 {% block content %}
+{% set messaging_locked = ticket.Status.value in ['Resolved', 'Rejected'] %}
 <nav aria-label="breadcrumb" class="mb-3">
   <ol class="breadcrumb">
     <li class="breadcrumb-item"><a href="{{ url_for('staff.dashboard') }}">Dashboard</a></li>
@@ -15,13 +16,13 @@
   <i class="bi bi-eye-fill mt-1"></i>
   <div>
     <strong>Restricted ticket view.</strong><br>
-    <span class="small">You are no longer the assigned staff member. You can view this ticket and reply on open threads, but operational controls are hidden.</span>
+    <span class="small">You are no longer the assigned staff member. You can view this ticket and use Live Chat if you previously interacted with it, but operational controls are hidden.</span>
   </div>
 </div>
 {% endif %}
 
 <div class="row g-4">
-  <div class="{{ 'col-lg-12' if is_restricted_view else 'col-lg-8' }}">
+  <div class="col-lg-12">
 
     <!-- Ticket Info -->
     <div class="card shadow-sm border-0 mb-4">
@@ -93,6 +94,16 @@
           {% endif %}
         </div>
       </div>
+      {% if not is_restricted_view %}
+      <div class="card-footer bg-transparent d-flex flex-wrap gap-2 justify-content-end">
+        <a href="{{ url_for('staff.ticket_actions', ticket_id=ticket.TicketId) }}" class="btn btn-sm btn-primary">
+          <i class="bi bi-list-task me-1"></i>Ticket Actions
+        </a>
+        <a href="{{ url_for('staff.macros') }}" class="btn btn-sm btn-outline-secondary">
+          <i class="bi bi-journal-text me-1"></i>Staff Macros
+        </a>
+      </div>
+      {% endif %}
     </div>
 
     <!-- Attachments -->
@@ -134,13 +145,19 @@
           <li class="nav-item" role="presentation">
             <button class="nav-link active" id="staff-activity-tab" data-bs-toggle="tab"
                     data-bs-target="#staff-activity-pane" type="button" role="tab">
-              <i class="bi bi-chat-left-dots me-1"></i>Activity &amp; Thread
+              <i class="bi bi-clipboard2-pulse me-1"></i>Status Updates
             </button>
           </li>
           <li class="nav-item" role="presentation">
             <button class="nav-link" id="staff-comments-tab" data-bs-toggle="tab"
                     data-bs-target="#staff-comments-pane" type="button" role="tab">
               <i class="bi bi-chat-dots me-1"></i>Student Comments ({{ ticket.comment_count }})
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" id="staff-livechat-tab" data-bs-toggle="tab"
+                    data-bs-target="#staff-livechat-pane" type="button" role="tab">
+              <i class="bi bi-broadcast me-1"></i>Live Chat
             </button>
           </li>
         </ul>
@@ -160,6 +177,22 @@
                 <span class="small text-muted">{{ update.Comment }}</span>
                 {% if update.StatusChange %}
                   {{ update_status_badge(update.StatusChange.value) }}
+                {% endif %}
+                {% if update.attachments.count() %}
+                <div class="mt-2 d-flex flex-wrap gap-2">
+                  {% for a in update.attachments.all() %}
+                  {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
+                  {% if ext in ['png', 'jpg', 'jpeg', 'gif', 'webp'] %}
+                  <a href="{{ attachment_url(a) }}" target="_blank" class="d-inline-block">
+                    <img src="{{ attachment_url(a) }}" alt="{{ a.FileName }}" class="img-thumbnail" style="max-height: 100px; max-width: 150px; object-fit: cover;"/>
+                  </a>
+                  {% else %}
+                  <a href="{{ attachment_url(a) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-paperclip me-1"></i>{{ a.FileName }}
+                  </a>
+                  {% endif %}
+                  {% endfor %}
+                </div>
                 {% endif %}
                 <div class="text-muted" style="font-size:0.72rem;">
                   {{ update.CreatedAt.strftime('%d %b %Y %H:%M') }}
@@ -181,7 +214,7 @@
                       <span class="fw-semibold small activity-staff-author-name">
                         {{ update.author.FullName }}
                         <span class="badge bg-primary ms-1 comment-role-tag" style="font-size:0.65rem;">
-                          {% if update.IsReplyThread %}Reply Thread{% else %}Staff{% endif %}
+                          {% if update.IsReplyThread %}Legacy Thread{% else %}Staff{% endif %}
                         </span>
                       </span>
                       <span class="text-muted" style="font-size:0.75rem;">
@@ -191,6 +224,22 @@
                     <p class="mb-1 small">{{ update.Comment }}</p>
                     {% if update.StatusChange %}
                       {{ update_status_badge(update.StatusChange.value) }}
+                    {% endif %}
+                    {% if update.attachments.count() %}
+                    <div class="mt-2 d-flex flex-wrap gap-2">
+                      {% for a in update.attachments.all() %}
+                      {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
+                      {% if ext in ['png', 'jpg', 'jpeg', 'gif', 'webp'] %}
+                      <a href="{{ attachment_url(a) }}" target="_blank" class="d-inline-block">
+                        <img src="{{ attachment_url(a) }}" alt="{{ a.FileName }}" class="img-thumbnail" style="max-height: 100px; max-width: 150px; object-fit: cover;"/>
+                      </a>
+                      {% else %}
+                      <a href="{{ attachment_url(a) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                        <i class="bi bi-paperclip me-1"></i>{{ a.FileName }}
+                      </a>
+                      {% endif %}
+                      {% endfor %}
+                    </div>
                     {% endif %}
                   </div>
 
@@ -235,33 +284,12 @@
                       </div>
                     </div>
                     {% endfor %}
-
-                    {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
-                      {% if update.UpdateId in locked_thread_ids %}
-                      <div class="ms-4 mt-2">
-                        <div class="alert alert-success py-2 small mb-0">
-                          <i class="bi bi-lock-fill me-1"></i>
-                          Thread closed — progress update received. No further replies needed.
-                        </div>
+                    <div class="ms-4 mt-2">
+                      <div class="alert alert-info py-2 small mb-0">
+                        <i class="bi bi-info-circle me-1"></i>
+                        Staff replies in Status Updates are disabled. Continue communication in the Live Chat tab.
                       </div>
-                      {% else %}
-                      <div class="ms-4 mt-2">
-                        <form method="POST"
-                              action="{{ url_for('staff.thread_reply',
-                                                ticket_id=ticket.TicketId,
-                                                update_id=update.UpdateId) }}">
-                          {{ thread_reply_form.hidden_tag() }}
-                          <div class="input-group input-group-sm">
-                            {{ thread_reply_form.comment(class="form-control form-control-sm",
-                                                        placeholder="Continue thread…") }}
-                            <button type="submit" class="btn btn-primary btn-sm">
-                              <i class="bi bi-send"></i>
-                            </button>
-                          </div>
-                        </form>
-                      </div>
-                      {% endif %}
-                    {% endif %}
+                    </div>
                   {% endif %}
                 </div>
               </div>
@@ -277,6 +305,22 @@
                   </span>
                 </div>
                 <p class="mb-0 small">{{ update.Comment }}</p>
+                {% if update.attachments.count() %}
+                <div class="mt-2 d-flex flex-wrap gap-2">
+                  {% for a in update.attachments.all() %}
+                  {% set ext = a.FileName.rsplit('.', 1)[-1].lower() %}
+                  {% if ext in ['png', 'jpg', 'jpeg', 'gif', 'webp'] %}
+                  <a href="{{ attachment_url(a) }}" target="_blank" class="d-inline-block">
+                    <img src="{{ attachment_url(a) }}" alt="{{ a.FileName }}" class="img-thumbnail" style="max-height: 100px; max-width: 150px; object-fit: cover;"/>
+                  </a>
+                  {% else %}
+                  <a href="{{ attachment_url(a) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-paperclip me-1"></i>{{ a.FileName }}
+                  </a>
+                  {% endif %}
+                  {% endfor %}
+                </div>
+                {% endif %}
               </div>
               <div class="rounded-circle bg-secondary text-white d-flex align-items-center
                           justify-content-center flex-shrink-0"
@@ -292,6 +336,12 @@
           </div>
 
           <div class="tab-pane fade" id="staff-comments-pane" role="tabpanel" aria-labelledby="staff-comments-tab">
+            {% if messaging_locked %}
+            <div class="alert alert-secondary py-2 small">
+              <i class="bi bi-lock-fill me-1"></i>
+              Student comments are closed because this ticket is {{ ticket.Status.value }}.
+            </div>
+            {% else %}
             <form method="POST" action="{{ url_for('student.add_ticket_comment', ticket_id=ticket.TicketId) }}" class="mb-3" enctype="multipart/form-data">
               {{ comment_form.hidden_tag() }}
               <input type="hidden" name="parent_comment_id" value=""/>
@@ -308,6 +358,7 @@
                 <i class="bi bi-chat-left-text me-1"></i>Post Comment
               </button>
             </form>
+            {% endif %}
 
             {% if student_comments %}
               {% for c in student_comments %}
@@ -333,6 +384,7 @@
                 {% endif %}
                 <span class="small text-muted"><i class="bi bi-hand-thumbs-up me-1"></i>{{ c.upvote_count }}</span>
 
+                {% if not messaging_locked %}
                 <button class="btn btn-sm btn-outline-secondary ms-1" type="button" data-bs-toggle="collapse" data-bs-target="#staffReplyForm_{{ c.CommentId }}" aria-expanded="false" aria-controls="staffReplyForm_{{ c.CommentId }}">
                   <i class="bi bi-reply me-1"></i>Reply
                 </button>
@@ -355,6 +407,7 @@
                     </button>
                   </form>
                 </div>
+                {% endif %}
 
                 {% for reply in c.replies.all() %}
                 <div class="border rounded p-2 mt-2 ms-3 bg-light">
@@ -388,225 +441,191 @@
               <p class="text-muted small mb-0">No comments yet.</p>
             {% endif %}
           </div>
-        </div>
-      </div>
-    </div>
-  </div>
 
-  <!-- RIGHT: Action Panels -->
-  {% if not is_restricted_view %}
-  <div class="col-lg-4">
-    {% if ticket.Status.value not in ['Resolved', 'Rejected'] %}
+          <div class="tab-pane fade" id="staff-livechat-pane" role="tabpanel" aria-labelledby="staff-livechat-tab">
+            {% if messaging_locked %}
+            <div class="alert alert-secondary py-2 small">
+              <i class="bi bi-lock-fill me-1"></i>
+              Live chat is closed because this ticket is {{ ticket.Status.value }}.
+            </div>
+            {% endif %}
+            <div class="border rounded p-2 mb-3 bg-light-subtle">
+              <div class="small text-muted mb-2">Users involved in chat</div>
+              <div class="d-flex flex-wrap gap-2" id="staffChatParticipants">
+                {% if chat_participants %}
+                  {% for p in chat_participants %}
+                  <span class="badge {{ 'text-bg-success' if p.is_online else 'text-bg-secondary' }}">
+                    {{ p.name }} ({{ p.role }})
+                  </span>
+                  {% endfor %}
+                {% else %}
+                  <span class="small text-muted">No participants yet.</span>
+                {% endif %}
+              </div>
+            </div>
 
-    {% if priority_required %}
-    <div class="alert alert-warning d-flex gap-2 align-items-start">
-      <i class="bi bi-exclamation-triangle-fill mt-1"></i>
-      <div>
-        <strong>Priority required.</strong><br>
-        <span class="small">Set priority before moving this ticket to In Progress or posting internal updates.</span>
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- Pending Escalation Notice -->
-
-    {% if pending_escalation %}
-    <div class="alert alert-warning d-flex gap-2 align-items-start">
-      <i class="bi bi-arrow-up-right-circle-fill mt-1"></i>
-      <div>
-        <strong>Escalation Pending</strong><br>
-        <span class="small">Your escalation request to
-          <strong>{{ pending_escalation.target_dept.Name }}</strong>
-          is awaiting admin review.
-        </span>
-      </div>
-    </div>
-    {% endif %}
-
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-header bg-warning text-dark fw-semibold">
-        <i class="bi bi-exclamation-circle me-1"></i>Set Priority
-      </div>
-      <div class="card-body">
-        <p class="small text-muted mb-2">Set or adjust the ticket priority after investigation.</p>
-        <div class="alert alert-info py-2 small">
-          <i class="bi bi-lightbulb me-1"></i>
-          Suggested priority from keywords: <strong>{{ suggested_priority }}</strong>
-        </div>
-        <form method="POST"
-              action="{{ url_for('staff.update_ticket_priority', ticket_id=ticket.TicketId) }}"
-              novalidate>
-          {{ priority_form.hidden_tag() }}
-          <div class="mb-3">
-            {{ priority_form.priority.label(class="form-label fw-semibold small") }}
-            {{ priority_form.priority(class="form-select form-select-sm") }}
-          </div>
-          <div class="mb-3">
-            {{ priority_form.reason.label(class="form-label fw-semibold small") }}
-            {{ priority_form.reason(class="form-control form-control-sm", **{"data-minlen": "5", "data-maxlen": "500"}) }}
-            <div class="form-text text-muted">Minimum 5 characters required.</div>
-          </div>
-          {{ priority_form.submit(class="btn btn-warning btn-sm w-100 text-dark fw-semibold") }}
-        </form>
-      </div>
-    </div>
-
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-header bg-primary text-white fw-semibold">
-        <i class="bi bi-arrow-repeat me-1"></i>Update Status
-      </div>
-      <div class="card-body">
-        <form method="POST"
-              action="{{ url_for('staff.update_ticket', ticket_id=ticket.TicketId) }}"
-              novalidate>
-          {{ update_form.hidden_tag() }}
-          <div class="mb-3">
-            {{ update_form.status.label(class="form-label fw-semibold small") }}
-            {{ update_form.status(class="form-select form-select-sm") }}
-          </div>
-          <div class="mb-3">
-            {{ update_form.comment.label(class="form-label fw-semibold small") }}
-            {{ update_form.comment(class="form-control form-control-sm", **{"data-minlen": "5", "data-maxlen": "2000"}) }}
-            <div class="form-text text-muted">Minimum 5 characters required.</div>
-          </div>
-          {{ update_form.submit(class="btn btn-primary btn-sm w-100") }}
-        </form>
-      </div>
-    </div>
-
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-header bg-warning text-dark fw-semibold">
-        <i class="bi bi-chat-left-text me-1"></i>Reply to Student
-        <span class="badge bg-dark ms-1" style="font-size:0.65rem;">Sets Pending Info</span>
-      </div>
-      <div class="card-body">
-        <p class="small text-muted mb-2">Opens a reply thread and sets status to
-          <strong>Pending Info</strong>.</p>
-        <form method="POST"
-              action="{{ url_for('staff.reply_ticket', ticket_id=ticket.TicketId) }}"
-              novalidate>
-          {{ reply_form.hidden_tag() }}
-          <div class="mb-3">
-            {{ reply_form.comment(class="form-control form-control-sm", **{"data-minlen": "5", "data-maxlen": "2000"}) }}
-            <div class="form-text text-muted">Minimum 5 characters required.</div>
-          </div>
-          {{ reply_form.submit(class="btn btn-warning btn-sm w-100 text-dark fw-semibold") }}
-        </form>
-      </div>
-    </div>
-
-    <div class="card shadow-sm border-success mb-3">
-      <div class="card-header bg-success text-white fw-semibold">
-        <i class="bi bi-check-circle me-1"></i>Mark as Resolved
-      </div>
-      <div class="card-body">
-        <form method="POST"
-              action="{{ url_for('staff.resolve_ticket', ticket_id=ticket.TicketId) }}"
-              novalidate>
-          {{ resolve_form.hidden_tag() }}
-          <div class="mb-3">
-            {{ resolve_form.resolution.label(class="form-label fw-semibold small") }}
-            {{ resolve_form.resolution(class="form-control form-control-sm", **{"data-minlen": "10", "data-maxlen": "3000"}) }}
-            <div class="form-text text-muted">Minimum 10 characters required.</div>
-          </div>
-          {{ resolve_form.submit(class="btn btn-success btn-sm w-100") }}
-        </form>
-      </div>
-    </div>
-
-    <!-- Escalation Request Panel -->
-    {% if not pending_escalation %}
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-header bg-secondary text-white fw-semibold">
-        <i class="bi bi-arrow-up-right-circle me-1"></i>Request Escalation
-      </div>
-      <div class="card-body">
-        <p class="small text-muted mb-2">
-          Request admin to move this ticket to another department.
-        </p>
-        <form method="POST"
-              action="{{ url_for('staff.request_escalation', ticket_id=ticket.TicketId) }}"
-              novalidate>
-          {{ escalation_form.hidden_tag() }}
-          <div class="mb-3">
-            {{ escalation_form.target_dept.label(class="form-label fw-semibold small") }}
-            {{ escalation_form.target_dept(class="form-select form-select-sm") }}
-          </div>
-          <div class="mb-3">
-            {{ escalation_form.reason.label(class="form-label fw-semibold small") }}
-            {{ escalation_form.reason(class="form-control form-control-sm", **{"data-minlen": "10", "data-maxlen": "1000"}) }}
-            <div class="form-text text-muted">Minimum 10 characters required.</div>
-          </div>
-          {{ escalation_form.submit(class="btn btn-secondary btn-sm w-100") }}
-        </form>
-      </div>
-    </div>
-    {% endif %}
-
-    {% if not pending_reassign and ticket.Status.value not in ['Resolved', 'Rejected'] %}
-    <div class="card shadow-sm border-0 mb-3">
-      <div class="card-header bg-light fw-semibold">
-        <i class="bi bi-person-fill-up me-1"></i>Request Reassignment
-      </div>
-      <div class="card-body">
-        <p class="small text-muted mb-2">
-          Request admin to reassign this ticket to a colleague in your department.
-        </p>
-        {% if reassign_form.target_staff.choices %}
-        <form method="POST"
-              action="{{ url_for('staff.request_reassignment', ticket_id=ticket.TicketId) }}"
-              novalidate>
-          {{ reassign_form.hidden_tag() }}
-          <div class="mb-3">
-            {{ reassign_form.target_staff.label(class="form-label fw-semibold small") }}
-            {{ reassign_form.target_staff(class="form-select form-select-sm") }}
-          </div>
-          <div class="mb-3">
-            {{ reassign_form.reason.label(class="form-label fw-semibold small") }}
-            {{ reassign_form.reason(class="form-control form-control-sm", **{"data-minlen": "10", "data-maxlen": "1000"}) }}
-            <div class="form-text text-muted">Minimum 10 characters required.</div>
-          </div>
-          {{ reassign_form.submit(class="btn btn-outline-secondary btn-sm w-100") }}
-        </form>
-        {% else %}
-        <p class="text-muted small mb-0">No other staff in your department.</p>
-        {% endif %}
-      </div>
-    </div>
-    {% elif pending_reassign %}
-    <div class="alert alert-info d-flex gap-2 align-items-start mb-3">
-      <i class="bi bi-person-fill-up mt-1 flex-shrink-0"></i>
-      <div>
-        <strong>Reassignment Pending</strong><br>
-        <span class="small">Requested to {{ pending_reassign.target_staff.FullName }}. Awaiting admin.</span>
-      </div>
-    </div>
-    {% endif %}
-
-    {% else %}
-    <div class="card border-0 shadow-sm">
-      <div class="card-body text-center text-muted py-4">
-        <i class="bi bi-lock display-5 mb-3 d-block"></i>
-        Ticket is <strong>{{ ticket.Status.value }}</strong> — no further actions.
-        {% if ticket.FeedbackRating %}
-          <hr/>
-          <div class="text-start">
-            <div class="small fw-semibold mb-1">Student Feedback</div>
-              {% for i in range(ticket.FeedbackRating) %}
-                <i class="bi bi-star-fill text-warning"></i>
-              {% endfor %}
-              {% for i in range(5 - ticket.FeedbackRating) %}
-                <i class="bi bi-star text-muted"></i>
-              {% endfor %}
-              {% if ticket.FeedbackComment %}
-                <p class="small text-muted mt-1 mb-0">{{ ticket.FeedbackComment }}</p>
+            <div id="staffChatList" class="border rounded p-2 mb-3" style="max-height: 360px; overflow-y: auto;">
+              {% if chat_messages %}
+                {% for msg in chat_messages %}
+                <div class="mb-2 pb-2 border-bottom">
+                  <div class="d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold small">{{ msg.author.FullName if msg.author else 'Unknown' }} <span class="text-muted">({{ msg.author.Role.value if msg.author else 'Unknown' }})</span></span>
+                    <span class="text-muted" style="font-size:0.72rem;">{{ msg.CreatedAt.strftime('%d %b %Y %H:%M') }}</span>
+                  </div>
+                  <div class="small">{{ msg.Message }}</div>
+                  {% if msg.attachments.count() %}
+                  <div class="mt-1 d-flex flex-wrap gap-2">
+                    {% for a in msg.attachments.all() %}
+                    <a href="{{ attachment_url(a) }}" target="_blank" class="btn btn-sm btn-outline-secondary">
+                      <i class="bi bi-paperclip me-1"></i>{{ a.FileName }}
+                    </a>
+                    {% endfor %}
+                  </div>
+                  {% endif %}
+                </div>
+                {% endfor %}
+              {% else %}
+                <p class="text-muted small mb-0">No live chat messages yet.</p>
               {% endif %}
+            </div>
+
+            {% if not messaging_locked %}
+            <form method="POST" action="{{ url_for('staff.send_chat_message', ticket_id=ticket.TicketId) }}" enctype="multipart/form-data">
+              {{ live_chat_form.hidden_tag() }}
+              <div class="mb-2">
+                {{ live_chat_form.message(class="form-control form-control-sm", rows=2, id='staffLiveChatMessage') }}
+                <div class="form-text">Required: 1 to 2000 characters. Current: <span id="staffLiveChatCount">0</span>.</div>
+              </div>
+              <div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+                <label class="btn btn-sm btn-outline-secondary mb-0">
+                  <i class="bi bi-paperclip me-1"></i>Add Attachments
+                  {{ live_chat_form.attachments(class="d-none", multiple=True, id='fileInput_staff_live_chat') }}
+                </label>
+                <div id="selectedFiles_fileInput_staff_live_chat" class="small text-muted text-truncate" style="max-width: 58%;">No files selected</div>
+                {{ live_chat_form.submit(class="btn btn-sm btn-primary ms-auto") }}
+              </div>
+            </form>
+            {% endif %}
           </div>
-        {% endif %}
+        </div>
       </div>
     </div>
-    {% endif %}
   </div>
-  {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+  const ticketId = {{ ticket.TicketId }};
+  const tabButtons = Array.from(document.querySelectorAll('button[data-bs-toggle="tab"][data-bs-target]'));
+  const tabTargets = new Set(tabButtons.map((btn) => btn.getAttribute('data-bs-target')));
+  const tabStorageKey = `staff-ticket-tab:${ticketId}`;
+
+  const showTabTarget = (target) => {
+    if (!target || !tabTargets.has(target) || !window.bootstrap?.Tab) return;
+    const targetBtn = tabButtons.find((btn) => btn.getAttribute('data-bs-target') === target);
+    if (targetBtn) {
+      new bootstrap.Tab(targetBtn).show();
+    }
+  };
+
+  if (tabButtons.length) {
+    const hashTarget = window.location.hash && tabTargets.has(window.location.hash)
+      ? window.location.hash
+      : '';
+    const savedTarget = localStorage.getItem(tabStorageKey);
+    if (hashTarget) {
+      showTabTarget(hashTarget);
+    } else if (savedTarget && tabTargets.has(savedTarget)) {
+      showTabTarget(savedTarget);
+    }
+
+    tabButtons.forEach((btn) => {
+      btn.addEventListener('shown.bs.tab', (event) => {
+        const currentTarget = event.target?.getAttribute('data-bs-target');
+        if (!currentTarget) return;
+        localStorage.setItem(tabStorageKey, currentTarget);
+        if (window.location.hash !== currentTarget) {
+          history.replaceState(null, '', `${window.location.pathname}${window.location.search}${currentTarget}`);
+        }
+      });
+    });
+  }
+
+  const chatList = document.getElementById('staffChatList');
+  const participantsWrap = document.getElementById('staffChatParticipants');
+  const chatMessageInput = document.getElementById('staffLiveChatMessage');
+  const chatCount = document.getElementById('staffLiveChatCount');
+  let sinceId = {% if chat_messages %}{{ chat_messages[-1].ChatMessageId }}{% else %}0{% endif %};
+
+  if (chatMessageInput && chatCount) {
+    const renderChatCount = () => {
+      chatCount.textContent = String((chatMessageInput.value || '').trim().length);
+    };
+    chatMessageInput.addEventListener('input', renderChatCount);
+    renderChatCount();
+  }
+
+  const escapeHtml = (value) => {
+    const div = document.createElement('div');
+    div.textContent = value || '';
+    return div.innerHTML;
+  };
+
+  const renderParticipants = (participants) => {
+    if (!participantsWrap || !Array.isArray(participants)) return;
+    if (!participants.length) {
+      participantsWrap.innerHTML = '<span class="small text-muted">No participants yet.</span>';
+      return;
+    }
+    participantsWrap.innerHTML = participants.map((p) => {
+      const cls = p.is_online ? 'text-bg-success' : 'text-bg-secondary';
+      return `<span class="badge ${cls}">${escapeHtml(p.name)} (${escapeHtml(p.role)})</span>`;
+    }).join('');
+  };
+
+  const appendMessage = (msg) => {
+    if (!chatList) return;
+    const attachments = (msg.attachments || []).map((a) => (
+      `<a href="${a.url}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="bi bi-paperclip me-1"></i>${escapeHtml(a.name)}</a>`
+    )).join('');
+    const row = document.createElement('div');
+    row.className = 'mb-2 pb-2 border-bottom';
+    row.innerHTML = `
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="fw-semibold small">${escapeHtml(msg.author_name)} <span class="text-muted">(${escapeHtml(msg.author_role)})</span></span>
+        <span class="text-muted" style="font-size:0.72rem;">${new Date(msg.created_at).toLocaleString()}</span>
+      </div>
+      <div class="small">${escapeHtml(msg.message)}</div>
+      ${attachments ? `<div class="mt-1 d-flex flex-wrap gap-2">${attachments}</div>` : ''}
+    `;
+    chatList.appendChild(row);
+    chatList.scrollTop = chatList.scrollHeight;
+  };
+
+  const poll = async () => {
+    try {
+      const response = await fetch(`{{ url_for('staff.list_chat_messages', ticket_id=ticket.TicketId) }}?since_id=${sinceId}`, { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const data = await response.json();
+      (data.messages || []).forEach((msg) => {
+        appendMessage(msg);
+        sinceId = Math.max(sinceId, Number(msg.chat_message_id || 0));
+      });
+      renderParticipants(data.participants || []);
+      await fetch(`{{ url_for('staff.chat_heartbeat', ticket_id=ticket.TicketId) }}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'X-Requested-With': 'XMLHttpRequest' },
+      });
+    } catch (err) {
+      console.debug('staff chat poll skipped', err);
+    }
+  };
+
+  setInterval(poll, 7000);
+
+})();
+</script>
 {% endblock %}

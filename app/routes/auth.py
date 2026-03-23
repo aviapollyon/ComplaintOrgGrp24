@@ -524,7 +524,13 @@ def forgot_password():
 @auth_bp.route('/reset-password/<token>', methods=['GET', 'POST'])
 def reset_password(token):
     if current_user.is_authenticated:
-        return redirect(url_for('auth.index'))
+        user_id = current_user.UserId
+        user_email = current_user.Email
+        logout_user()
+        log_audit('user_logout', target_type='user', target_id=user_id,
+                  details=f'Auto logout for password reset: {user_email}')
+        db.session.commit()
+        flash('You were signed out so you can reset your password securely.', 'info')
 
     user, error = _resolve_reset_user(token)
     if error:

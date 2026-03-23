@@ -166,3 +166,16 @@ class TicketCommentForm(FlaskForm):
 class SocialPreferenceForm(FlaskForm):
     suppress_social = BooleanField('Disable notifications for social votes and comments')
     submit = SubmitField('Save Preference')
+
+
+class StudentLiveChatForm(FlaskForm):
+    message = TextAreaField(
+        'Message',
+        validators=[DataRequired(), Length(min=1, max=2000)],
+        render_kw={"rows": 2, "placeholder": "Type your message..."},
+    )
+    attachments = MultipleFileField(
+        'Attachments (optional)',
+        validators=[FileAllowed(ALLOWED_EXT, 'Only PDF, images, and Word documents.')],
+    )
+    submit = SubmitField('Send')

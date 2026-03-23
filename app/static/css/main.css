@@ -404,6 +404,22 @@ body.sidebar-lock-scroll {
   }
 }
 
+.priority-blink-zone {
+  animation: priorityPulse 1.8s ease-in-out infinite;
+}
+
+@keyframes priorityPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.15); }
+  50% { box-shadow: 0 0 0 4px rgba(255, 193, 7, 0.35); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .priority-blink-zone {
+    animation: none;
+    box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.28);
+  }
+}
+
 @media (max-width: 575.98px) {
   body[data-authenticated="1"] .portal-navbar .container-lg {
     column-gap: 0.5rem;
@@ -498,6 +514,70 @@ body.sidebar-lock-scroll {
   pointer-events: none;
 }
 .notif-dot-warn { background: #f59e0b; }
+
+/* ── Global Staff Macro Widget ─────────────────────────────────────────── */
+.macro-widget {
+  position: fixed;
+  right: 1rem;
+  bottom: 1rem;
+  z-index: 1080;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.55rem;
+}
+
+.macro-widget-fab {
+  border: 0;
+  border-radius: 999px;
+  padding: 0.62rem 0.95rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: #fff;
+  background: linear-gradient(135deg, #1a3a6b 0%, #27538f 100%);
+  box-shadow: 0 10px 24px rgba(15, 32, 68, 0.35);
+}
+
+.macro-widget-fab:hover,
+.macro-widget-fab:focus-visible {
+  filter: brightness(1.05);
+  outline: none;
+}
+
+.macro-widget-panel {
+  width: min(340px, calc(100vw - 2rem));
+  border-radius: 0.9rem;
+  border: 1px solid var(--bs-border-color);
+  background: var(--bs-body-bg);
+  box-shadow: 0 16px 30px rgba(15, 23, 42, 0.22);
+  padding: 0.75rem;
+}
+
+.macro-widget-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.55rem;
+  gap: 0.5rem;
+}
+
+@media (max-width: 575.98px) {
+  .macro-widget {
+    right: 0.75rem;
+    bottom: 0.75rem;
+  }
+
+  .macro-widget-panel {
+    width: min(96vw, 360px);
+  }
+
+  .macro-widget-fab {
+    padding: 0.6rem 0.86rem;
+  }
+}
 
 /* ── Announcement Bar ───────────────────────────────────────────────────── */
 .announcement-bar {
@@ -1312,6 +1392,46 @@ html { scroll-behavior: smooth; }
 .sla-tag-resolution {
   background: #dc3545;
   color: #fff;
+}
+
+.sla-watch-rail {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(240px, 280px);
+  gap: 0.75rem;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  padding-bottom: 0.25rem;
+}
+
+.sla-watch-card {
+  border: 1px solid var(--bs-border-color);
+  border-radius: 0.75rem;
+  background: var(--bs-body-bg);
+  padding: 0.75rem;
+  min-height: 136px;
+}
+
+.sla-watch-card.response_overdue {
+  border-left: 4px solid #f59f00;
+  background: color-mix(in srgb, #f59f00 12%, var(--bs-body-bg));
+}
+
+.sla-watch-card.resolution_overdue {
+  border-left: 4px solid #dc3545;
+  background: color-mix(in srgb, #dc3545 12%, var(--bs-body-bg));
+}
+
+.sla-watch-card.response_risk,
+.sla-watch-card.resolution_risk {
+  border-left: 4px solid #0d6efd;
+}
+
+.sla-watch-card.fallback,
+.sla-watch-card.empty {
+  border-left: 4px solid #6c757d;
 }
 
 @media (max-width: 1199.98px) {

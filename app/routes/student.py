@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from flask import (
     Blueprint, render_template, redirect, url_for,
-    flash, request, abort, send_from_directory, current_app
+    flash, request, abort, send_from_directory, current_app, jsonify
 )
 from flask_login import login_required, current_user
 from sqlalchemy.exc import IntegrityError
@@ -20,11 +20,16 @@ from app.models.ticket_comment import TicketComment
 from app.models.comment_attachment import CommentAttachment
 from app.models.comment_vote import CommentVote
 from app.models.user_preference import UserPreference
+from app.models.ticket_chat_message import TicketChatMessage
+from app.models.ticket_chat_attachment import TicketChatAttachment
+from app.models.ticket_chat_presence import TicketChatPresence
+from app.models.escalation import EscalationRequest
+from app.models.reassignment_request import ReassignmentRequest
 from app.utils.decorators     import role_required
 from app.utils.helpers        import (
     allowed_file,
     get_department_name_for_category, check_and_raise_flags,
-    CATEGORY_SUBCATEGORY_MAP,
+    CATEGORY_SUBCATEGORY_MAP, attachment_url,
 )
 from app.utils.sorting        import apply_sort
 from app.services.assignment  import auto_assign_ticket
@@ -34,16 +39,118 @@ from app.services.notifications import (
     notify_ticket_submitted,
     notify_social_vote,
     notify_social_comment,
+    notify_live_chat_message,
 )
 from app.forms.student_forms  import (
     SubmitTicketForm, EditTicketForm, FeedbackForm,
     TicketFilterForm, StudentReplyForm, ReopenRequestForm,
-    TicketCommentForm, SocialPreferenceForm,
+    TicketCommentForm, SocialPreferenceForm, StudentLiveChatForm,
 )
 
 student_bp = Blueprint('student', __name__)
 
 COMMENT_IMAGE_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+CHAT_BATCH_LIMIT = 40
+
+
+def _chat_related_staff_ids(ticket: Ticket) -> set[int]:
+    related = set()
+
+    reassign_rows = ReassignmentRequest.query.filter(
+        ReassignmentRequest.TicketId == ticket.TicketId,
+        db.or_(
+            ReassignmentRequest.RequestedById.isnot(None),
+            ReassignmentRequest.TargetStaffId.isnot(None),
+        ),
+    ).all()
+    for row in reassign_rows:
+        if row.RequestedById:
+            related.add(row.RequestedById)
+        if row.TargetStaffId:
+            related.add(row.TargetStaffId)
+
+    escalation_rows = EscalationRequest.query.filter(
+        EscalationRequest.TicketId == ticket.TicketId,
+        EscalationRequest.RequestedById.isnot(None),
+    ).all()
+    for row in escalation_rows:
+        related.add(row.RequestedById)
+
+    return related
+
+
+def _chat_participant_ids(ticket: Ticket) -> set[int]:
+    participants = {ticket.StudentId}
+    if ticket.StaffId:
+        participants.add(ticket.StaffId)
+    participants.update(_chat_related_staff_ids(ticket))
+    participants.update([u.UserId for u in User.query.filter_by(Role=RoleEnum.Admin, IsActive=True).all()])
+    return {uid for uid in participants if uid}
+
+
+def _chat_notification_targets(ticket: Ticket, sender_id: int) -> set[int]:
+    participants = _chat_participant_ids(ticket)
+    related_staff = _chat_related_staff_ids(ticket)
+    recipients = {uid for uid in participants if uid != sender_id}
+    blocked = {
+        uid for uid in related_staff
+        if uid not in {ticket.StaffId, ticket.StudentId} and uid != sender_id
+    }
+    return recipients - blocked
+
+
+def _touch_chat_presence(ticket_id: int, user_id: int):
+    presence = TicketChatPresence.query.filter_by(TicketId=ticket_id, UserId=user_id).first()
+    if not presence:
+        db.session.add(TicketChatPresence(TicketId=ticket_id, UserId=user_id, LastSeenAt=datetime.utcnow()))
+    else:
+        presence.LastSeenAt = datetime.utcnow()
+
+
+def _serialize_chat_message(message: TicketChatMessage) -> dict:
+    return {
+        'chat_message_id': message.ChatMessageId,
+        'ticket_id': message.TicketId,
+        'user_id': message.UserId,
+        'author_name': message.author.FullName if message.author else 'Unknown',
+        'author_role': message.author.Role.value if message.author and message.author.Role else 'Unknown',
+        'message': message.Message,
+        'created_at': message.CreatedAt.isoformat() if message.CreatedAt else None,
+        'attachments': [
+            {'name': a.FileName, 'url': attachment_url(a)}
+            for a in message.attachments.order_by(TicketChatAttachment.ChatAttachmentId.asc()).all()
+        ],
+    }
+
+
+def _chat_participant_badges(ticket: Ticket) -> list[dict]:
+    participants = (
+        db.session.query(User, db.func.max(TicketChatPresence.LastSeenAt).label('last_seen'))
+        .join(TicketChatMessage, TicketChatMessage.UserId == User.UserId)
+        .outerjoin(
+            TicketChatPresence,
+            db.and_(
+                TicketChatPresence.UserId == User.UserId,
+                TicketChatPresence.TicketId == ticket.TicketId,
+            ),
+        )
+        .filter(TicketChatMessage.TicketId == ticket.TicketId)
+        .group_by(User.UserId)
+        .order_by(User.FullName.asc())
+        .all()
+    )
+
+    online_window = int(current_app.config.get('CHAT_ONLINE_WINDOW_SECONDS', 60))
+    cutoff = datetime.utcnow().timestamp() - online_window
+    return [
+        {
+            'user_id': user.UserId,
+            'name': user.FullName,
+            'role': user.Role.value,
+            'is_online': bool(last_seen and last_seen.timestamp() >= cutoff),
+        }
+        for user, last_seen in participants
+    ]
 
 
 def _publish_ticket_activity(ticket: Ticket, action: str, actor_id: int, extra: dict = None):
@@ -430,9 +537,20 @@ def view_ticket(ticket_id):
 
     ticket_attachments = ticket.attachments.filter_by(UpdateId=None).all()
     reply_form         = StudentReplyForm()
+    live_chat_form     = StudentLiveChatForm()
     feedback_form      = FeedbackForm()
     reopen_form        = ReopenRequestForm()
     comment_form       = TicketCommentForm()
+
+    chat_messages = []
+    chat_participants = []
+    if is_owner:
+        chat_messages = (TicketChatMessage.query
+                         .filter_by(TicketId=ticket.TicketId)
+                         .order_by(TicketChatMessage.ChatMessageId.asc())
+                         .limit(100)
+                         .all())
+        chat_participants = _chat_participant_badges(ticket)
 
     pending_reopen = ReopenRequest.query.filter_by(
         TicketId=ticket_id, StudentId=current_user.UserId, Status='Pending'
@@ -452,11 +570,14 @@ def view_ticket(ticket_id):
         my_comment_votes=my_comment_votes,
         ticket_attachments=ticket_attachments,
         reply_form=reply_form,
+        live_chat_form=live_chat_form,
         feedback_form=feedback_form,
         reopen_form=reopen_form,
         comment_form=comment_form,
         pending_reopen=pending_reopen,
         locked_thread_ids=locked_thread_ids,
+        chat_messages=chat_messages,
+        chat_participants=chat_participants,
     )
 
 
@@ -493,6 +614,10 @@ def vote_ticket(ticket_id):
 def add_ticket_comment(ticket_id):
     ticket = Ticket.query.get_or_404(ticket_id)
     form = TicketCommentForm()
+
+    if ticket.Status in (StatusEnum.Resolved, StatusEnum.Rejected):
+        flash('Student comments are closed for resolved or rejected tickets.', 'warning')
+        return redirect(_safe_next_url() or request.referrer or _ticket_detail_url_for_current_user(ticket_id))
 
     if not _can_user_comment_on_ticket(ticket):
         abort(403)
@@ -710,6 +835,104 @@ def reply_to_update(ticket_id, update_id):
         flash('Reply cannot be empty.', 'danger')
 
     return redirect(url_for('student.view_ticket', ticket_id=ticket_id))
+
+
+@student_bp.route('/ticket/<int:ticket_id>/chat/messages')
+@login_required
+@role_required('Student')
+def list_chat_messages(ticket_id):
+    ticket = _get_owned_student_ticket(ticket_id)
+
+    since_id = request.args.get('since_id', default=0, type=int)
+    if since_id < 0:
+        since_id = 0
+
+    rows = (TicketChatMessage.query
+            .filter(TicketChatMessage.TicketId == ticket_id,
+                    TicketChatMessage.ChatMessageId > since_id)
+            .order_by(TicketChatMessage.ChatMessageId.asc())
+            .limit(CHAT_BATCH_LIMIT)
+            .all())
+
+    _touch_chat_presence(ticket_id, current_user.UserId)
+    db.session.commit()
+
+    next_since = rows[-1].ChatMessageId if rows else since_id
+    return jsonify({
+        'messages': [_serialize_chat_message(row) for row in rows],
+        'participants': _chat_participant_badges(ticket),
+        'next_since_id': next_since,
+    })
+
+
+@student_bp.route('/ticket/<int:ticket_id>/chat/send', methods=['POST'])
+@login_required
+@role_required('Student')
+def send_chat_message(ticket_id):
+    ticket = _get_owned_student_ticket(ticket_id)
+
+    if ticket.Status in (StatusEnum.Resolved, StatusEnum.Rejected):
+        flash('Live chat is closed for resolved or rejected tickets.', 'warning')
+        return redirect(url_for('student.view_ticket', ticket_id=ticket_id, _anchor='student-livechat-pane'))
+
+    form = StudentLiveChatForm()
+
+    if not form.validate_on_submit():
+        flash('Chat message must contain between 1 and 2000 characters.', 'danger')
+        return redirect(url_for('student.view_ticket', ticket_id=ticket_id, _anchor='student-livechat-pane'))
+
+    message = TicketChatMessage(
+        TicketId=ticket_id,
+        UserId=current_user.UserId,
+        Message=form.message.data.strip(),
+    )
+    db.session.add(message)
+    db.session.flush()
+
+    for file in request.files.getlist('attachments'):
+        if file and file.filename and allowed_file(file.filename):
+            from werkzeug.utils import secure_filename
+
+            upload_root = current_app.config['UPLOAD_FOLDER']
+            chat_dir = os.path.join(upload_root, f'chat_{message.ChatMessageId}')
+            os.makedirs(chat_dir, exist_ok=True)
+
+            filename = secure_filename(file.filename)
+            filepath = os.path.join(chat_dir, filename)
+            file.save(filepath)
+            db.session.add(TicketChatAttachment(
+                ChatMessageId=message.ChatMessageId,
+                FileName=filename,
+                FilePath=filepath,
+            ))
+
+    _touch_chat_presence(ticket_id, current_user.UserId)
+    ticket.UpdatedAt = datetime.utcnow()
+
+    recipients = _chat_notification_targets(ticket, current_user.UserId)
+    notify_live_chat_message(ticket, current_user, sorted(recipients))
+
+    db.session.commit()
+
+    payload = {
+        'ticket_id': ticket.TicketId,
+        'chat_message_id': message.ChatMessageId,
+        'sender_id': current_user.UserId,
+    }
+    for uid in _chat_participant_ids(ticket):
+        publish_user_event(uid, 'chat_message', payload)
+
+    return redirect(url_for('student.view_ticket', ticket_id=ticket_id, _anchor='student-livechat-pane'))
+
+
+@student_bp.route('/ticket/<int:ticket_id>/chat/heartbeat', methods=['POST'])
+@login_required
+@role_required('Student')
+def chat_heartbeat(ticket_id):
+    _get_owned_student_ticket(ticket_id)
+    _touch_chat_presence(ticket_id, current_user.UserId)
+    db.session.commit()
+    return jsonify({'ok': True})
 
 
 @student_bp.route('/ticket/<int:ticket_id>/withdraw', methods=['POST'])

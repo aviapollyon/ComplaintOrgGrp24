@@ -224,7 +224,7 @@ with app.app_context():
     tayla    = student_users['tayla.example@dut4life.ac.za']
 
     # =========================================================================
-    # 5. TICKETS  (25 total — all 14 categories, flag triggers included)
+    # 5. TICKETS  (32 total — all 14 categories, plus recurring/SLA test data)
     # =========================================================================
 
     # ── ACADEMIC (3 tickets — flags "result") ────────────────────────────────
@@ -643,6 +643,94 @@ with app.app_context():
     notify_ticket_assigned(t25)
     # ► "result" now in t1, t2, t3, t25 — four Academic tickets → flag triggered
 
+    # ── Additional recurring + SLA test data for Sipho and Priya ───────────
+
+    # Extra recurring Academic keyword cluster on "timetable" for Sipho/Priya.
+    t26 = make_ticket(
+        keegan, sipho, academic,
+        'Timetable still missing ACC302 tutorial slot',
+        'My semester timetable still does not show the ACC302 tutorial slot. '
+        'The module appears without the tutorial venue and time, and this timetable '
+        'issue has caused multiple missed sessions.',
+        'Academic', PriorityEnum.Medium, StatusEnum.Assigned,
+        created_days_ago=4,
+    )
+    notify_ticket_assigned(t26)
+
+    t27 = make_ticket(
+        tayla, priya, academic,
+        'Timetable venue changed without notice for MGT210',
+        'The timetable for MGT210 changed venue and period without any email notice. '
+        'The module page still reflects the old timetable details and students are confused.',
+        'Academic', PriorityEnum.Medium, StatusEnum.InProgress,
+        created_days_ago=5,
+    )
+    add_update(t27, priya,
+               'Escalated to timetable office and awaiting corrected venue publication.',
+               UpdateStatusEnum.InProgress, when_days_ago=4)
+    notify_ticket_assigned(t27)
+    notify_progress_update(t27, priya)
+
+    t28 = make_ticket(
+        mohammed, sipho, academic,
+        'Module timetable clash between ACC202 and ECO201',
+        'My module timetable currently shows ACC202 and ECO201 at overlapping times '
+        'on Wednesdays. Please resolve this timetable conflict before tests begin.',
+        'Academic', PriorityEnum.High, StatusEnum.InProgress,
+        created_days_ago=6,
+    )
+    add_update(t28, sipho,
+               'Clash confirmed and submitted to departmental scheduler for correction.',
+               UpdateStatusEnum.InProgress, when_days_ago=5)
+    notify_ticket_assigned(t28)
+    notify_progress_update(t28, sipho)
+
+    # First-response SLA breach only (older than 24h, younger than 48h, no staff response).
+    t29 = make_ticket(
+        zanele, sipho, academic,
+        'SLA test: first response overdue (Sipho)',
+        'Seeded test ticket for first-response SLA breach validation on Sipho dashboard.',
+        'Academic', PriorityEnum.Medium, StatusEnum.Assigned,
+        created_days_ago=1,
+    )
+    notify_ticket_assigned(t29)
+
+    t30 = make_ticket(
+        chloe, priya, academic,
+        'SLA test: first response overdue (Priya)',
+        'Seeded test ticket for first-response SLA breach validation on Priya dashboard.',
+        'Academic', PriorityEnum.Medium, StatusEnum.Assigned,
+        created_days_ago=1,
+    )
+    notify_ticket_assigned(t30)
+
+    # Resolution SLA breach only (>48h old with a staff response already present).
+    t31 = make_ticket(
+        lethiwe, sipho, academic,
+        'SLA test: resolution overdue after response (Sipho)',
+        'Seeded test ticket for resolution SLA breach validation after first staff response.',
+        'Academic', PriorityEnum.High, StatusEnum.InProgress,
+        created_days_ago=7,
+    )
+    add_update(t31, sipho,
+               'Initial response sent. Investigation continues pending registry data.',
+               UpdateStatusEnum.InProgress, when_days_ago=6)
+    notify_ticket_assigned(t31)
+    notify_progress_update(t31, sipho)
+
+    t32 = make_ticket(
+        rishi, priya, academic,
+        'SLA test: resolution overdue after response (Priya)',
+        'Seeded test ticket for resolution SLA breach validation after first staff response.',
+        'Academic', PriorityEnum.High, StatusEnum.InProgress,
+        created_days_ago=8,
+    )
+    add_update(t32, priya,
+               'Initial response posted. Awaiting external office confirmation to close.',
+               UpdateStatusEnum.InProgress, when_days_ago=7)
+    notify_ticket_assigned(t32)
+    notify_progress_update(t32, priya)
+
     # ── 6a. Pending admin requests (escalation/reassignment/reopen) ─────────
     pending_escalations = [
         (t7, priya, admin_dept, 'Exam clash affects multiple modules and needs registrar intervention.', 2),
@@ -707,7 +795,8 @@ with app.app_context():
     # Process in submission order so counts accumulate correctly
     for t in [t1, t2, t3, t4, t5, t6, t7, t8, t9,
               t10, t11, t12, t13, t14, t15, t16, t17, t18,
-              t19, t20, t21, t22, t23, t24, t25]:
+              t19, t20, t21, t22, t23, t24, t25, t26, t27,
+              t28, t29, t30, t31, t32]:
         check_and_raise_flags(t)
 
     # ── 8. Announcements ──────────────────────────────────────────────────────
@@ -906,6 +995,13 @@ with app.app_context():
         (t23, 'Student Conduct',  'Tayla  → Mandla',   'In Progress'),
         (t24, 'Other',            'Mohammed → Thabo',  'Assigned'),
         (t25, 'Academic',         'Lethiwe → Priya',   'Assigned'),
+        (t26, 'Academic',         'Keegan → Sipho',    'Assigned (recurring timetable)'),
+        (t27, 'Academic',         'Tayla  → Priya',    'In Progress (recurring timetable)'),
+        (t28, 'Academic',         'Mohammed → Sipho',  'In Progress (recurring timetable)'),
+        (t29, 'Academic',         'Zanele → Sipho',    'Assigned (First Response SLA breach)'),
+        (t30, 'Academic',         'Chloe  → Priya',    'Assigned (First Response SLA breach)'),
+        (t31, 'Academic',         'Lethiwe → Sipho',   'In Progress (Resolution SLA breach)'),
+        (t32, 'Academic',         'Rishi  → Priya',    'In Progress (Resolution SLA breach)'),
     ]
     print(f'  {"#":<5} {"Category":<20} {"Parties":<28} Status')
     print('  ' + '─' * 65)

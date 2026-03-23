@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}Staff Macros{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+  <ol class="breadcrumb">
+    <li class="breadcrumb-item"><a href="{{ url_for('staff.dashboard') }}">Dashboard</a></li>
+    <li class="breadcrumb-item active">Staff Macros</li>
+  </ol>
+</nav>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card shadow-sm border-0">
+      <div class="card-header fw-semibold">Create Macro</div>
+      <div class="card-body">
+        <form method="POST" novalidate>
+          {{ form.hidden_tag() }}
+          <div class="mb-3">
+            {{ form.name.label(class="form-label fw-semibold small") }}
+            {{ form.name(class="form-control form-control-sm") }}
+          </div>
+          <div class="mb-3">
+            {{ form.macro_type.label(class="form-label fw-semibold small") }}
+            {{ form.macro_type(class="form-control form-control-sm", placeholder='Status update, apology, escalation, etc.') }}
+          </div>
+          <div class="mb-3">
+            {{ form.content.label(class="form-label fw-semibold small") }}
+            {{ form.content(class="form-control form-control-sm") }}
+          </div>
+          {{ form.submit(class="btn btn-primary btn-sm") }}
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <div class="card shadow-sm border-0">
+      <div class="card-header d-flex justify-content-between align-items-center">
+        <span class="fw-semibold">Your Macros</span>
+        <form method="GET" class="d-flex gap-2">
+          <input type="text" class="form-control form-control-sm" name="q" value="{{ query }}" placeholder="Search by name or type"/>
+          <button type="submit" class="btn btn-sm btn-outline-secondary">Search</button>
+        </form>
+      </div>
+      <div class="card-body">
+        {% if macros %}
+          {% for macro in macros %}
+          <div class="border rounded p-2 mb-2">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+              <div>
+                <span class="fw-semibold">{{ macro.Name }}</span>
+                <span class="badge text-bg-secondary ms-1">{{ macro.MacroType }}</span>
+              </div>
+              <div class="d-flex gap-1">
+                <button type="button" class="btn btn-sm btn-outline-primary copy-macro-btn" data-content="{{ macro.Content|e }}">Copy</button>
+                <form method="POST" action="{{ url_for('staff.delete_macro', macro_id=macro.MacroId) }}">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"/>
+                  <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+                </form>
+              </div>
+            </div>
+            <pre class="small mb-0" style="white-space: pre-wrap;">{{ macro.Content }}</pre>
+          </div>
+          {% endfor %}
+        {% else %}
+          <p class="text-muted small mb-0">No macros found.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(() => {
+  const buttons = document.querySelectorAll('.copy-macro-btn');
+  buttons.forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const content = btn.getAttribute('data-content') || '';
+      await navigator.clipboard.writeText(content);
+      btn.classList.remove('btn-outline-primary');
+      btn.classList.add('btn-success');
+      btn.textContent = 'Copied';
+      window.setTimeout(() => {
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-outline-primary');
+        btn.textContent = 'Copy';
+      }, 900);
+    });
+  });
+})();
+</script>
+{% endblock %}

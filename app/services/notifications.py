@@ -18,6 +18,8 @@ _smtp_probe_state = {
     'is_reachable': None,
     'last_unreachable_warning_at': 0.0,
 }
+_chat_email_lock = threading.Lock()
+_chat_email_last_sent: dict[tuple[int, int], float] = {}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -338,6 +340,52 @@ def notify_student_replied(ticket, student_user):
             title,
             _email_body_with_link(message, ticket.StaffId, ticket.TicketId, 'View student reply'),
         )
+
+
+def notify_live_chat_message(ticket, sender_user, recipient_ids: list[int]):
+    """Notify live chat participants for a new chat message.
+
+    In-app notifications are always sent. Emails are sent with per-ticket throttling
+    to keep volume suitable for low-resource deployments.
+    """
+    from flask import current_app
+
+    if not recipient_ids:
+        return
+
+    title = f'Live Chat — Ticket #{ticket.TicketId}'
+    message = f'{sender_user.FullName} sent a new message on "{ticket.Title}".'
+
+    now_mono = time.monotonic()
+    email_enabled = bool(current_app.config.get('CHAT_EMAIL_NOTIFY', True))
+    cooldown_seconds = int(current_app.config.get('CHAT_EMAIL_COOLDOWN_SECONDS', 120))
+
+    for recipient_id in recipient_ids:
+        notify(
+            user_id=recipient_id,
+            title=title,
+            message=message,
+            notif_type='live_chat_message',
+            ticket_id=ticket.TicketId,
+        )
+
+        if not email_enabled:
+            continue
+
+        cache_key = (recipient_id, ticket.TicketId)
+        should_email = False
+        with _chat_email_lock:
+            last_sent = _chat_email_last_sent.get(cache_key)
+            if not last_sent or (now_mono - last_sent) >= cooldown_seconds:
+                _chat_email_last_sent[cache_key] = now_mono
+                should_email = True
+
+        if should_email:
+            _send_email(
+                _get_user_email(recipient_id),
+                title,
+                _email_body_with_link(message, recipient_id, ticket.TicketId, 'Open live chat'),
+            )
 
 
 def notify_ticket_resolved(ticket, staff_user):
